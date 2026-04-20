@@ -7,16 +7,12 @@ extern command_t __start_cmd;
 extern command_t __stop_cmd;
 
 void cmd_help(char* args, int* row) {
-    print_at_color("--- CawOS Dynamic Help ---", (*row)++, 0, 0x0B);
+    print_at_color("--- CawOS Command Help ---", (*row)++, 0, 0x0B);
     
     command_t* cmd;
     for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
-        // Кастуем (char*), чтобы убрать warning про const
         print_at("> ", *row, 0);
         print_at((char*)cmd->name, *row, 2);
-        
-        // Описание теперь должно работать
-        
         (*row)++;
         watchdog_reset();
 
@@ -26,7 +22,6 @@ void cmd_help(char* args, int* row) {
         }
     }
     
-    // Исправлено: print_at_color вместо print_at (так как передаем 0x0B)
     print_at_color("--------------------------", (*row)++, 0, 0x0B);
 }
 

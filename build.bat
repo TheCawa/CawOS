@@ -62,6 +62,8 @@ if exist scripts/pack_fs.py (
     python scripts/pack_fs.py os-image.bin build/apps/
 )
 
+
+
 echo.
 color 0A
 echo [SUCCESS] CawOS is ready!

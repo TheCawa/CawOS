@@ -1,13 +1,10 @@
 #include "commands.h"
 #include "util.h"
 #include "screen.h"
-
-// Вот этот парень спасет компиляцию:
 #ifndef NULL
 #define NULL ((void*)0)
 #endif
 
-// Эти метки нам даст линковщик из файла .ld
 extern command_t __start_cmd;
 extern command_t __stop_cmd;
 
@@ -19,7 +16,6 @@ void execute_command(char* input, int* row) {
         int name_len = strlen(cmd->name);
 
         if (cmd->has_args) {
-            // Проверка на пробел или конец строки для команд с аргументами
             if (strncmp(input, cmd->name, name_len) == 0 && (input[name_len] == ' ' || input[name_len] == '\0')) {
                 char* args = (input[name_len] == ' ') ? (input + name_len + 1) : "";
                 cmd->func(args, row);
@@ -27,7 +23,7 @@ void execute_command(char* input, int* row) {
             }
         } else {
             if (strcmp(input, cmd->name) == 0) {
-                cmd->func(NULL, row); // Теперь NULL определен!
+                cmd->func(NULL, row);
                 return;
             }
         }

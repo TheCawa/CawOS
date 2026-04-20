@@ -13,7 +13,7 @@ echo Starting CawOS...
 :: Добавил -m 256 для задания объема ОЗУ (хотя CawOS пока столько не ест)
 :: Добавил -serial stdio, чтобы ты мог выводить логи из ядра в консоль
 qemu-system-i386 ^
-    -drive format=raw,file=%IMAGE% ^
+    -drive format=raw,file=%IMAGE%,if=ide,index=0,media=disk,readonly=off ^
     -audiodev driver=dsound,id=spk ^
     -machine pcspk-audiodev=spk ^
     -vga std ^

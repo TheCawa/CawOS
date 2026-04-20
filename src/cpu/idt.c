@@ -9,9 +9,20 @@ struct idt_ptr idtp;
 extern void isr0();
 extern void idt_load(unsigned int);
 extern void isr32();
+extern void isr_ignore();
+extern void isr13();
 
 volatile int watchdog_counter = 0;
 const int WATCHDOG_LIMIT = 5000; 
+
+void int_to_hex(uint32_t n, char *str) {
+    char hex_chars[] = "0123456789ABCDEF";
+    str[0] = '0'; str[1] = 'x';
+    for (int i = 0; i < 8; i++) {
+        str[9 - i] = hex_chars[(n >> (i * 4)) & 0x0F];
+    }
+    str[10] = '\0';
+}
 
 void idt_set_gate(unsigned char num, unsigned long base, unsigned short sel, unsigned char flags) {
     idt[num].base_lo = (base & 0xFFFF);
@@ -21,47 +32,81 @@ void idt_set_gate(unsigned char num, unsigned long base, unsigned short sel, uns
     idt[num].flags = flags;
 }
 
-void draw_panic_screen(const char* msg) {
-    unsigned char speaker_state = port_byte_in(0x61);
-    port_byte_out(0x61, speaker_state & 0xFC);
-    char* vm = (char*)0xb8000;
-    for (int i = 0; i < 80 * 25 * 2; i += 2) {
-        vm[i] = ' ';
-        vm[i+1] = 0x4F; 
-    }
-    int offset = (12 * 80 + 20) * 2;
-    for (int i = 0; msg[i] != '\0'; i++) {
-        vm[offset + (i * 2)] = msg[i];
-        vm[offset + (i * 2) + 1] = 0x4F;
-    }
+void idt_reload() {
+    idt_load((unsigned int)&idtp);
 }
 
-// Добавили звездочку: теперь принимаем указатель на структуру
-void isr_handler(struct registers *r) { 
-    
-    // 1. Сразу отправляем EOI (используем стрелочку ->)
-    if (r->int_no >= 32) {
-        port_byte_out(0x20, 0x20);
-        if (r->int_no >= 40) port_byte_out(0xA0, 0x20);
+void draw_bsod(const char* error_name, struct registers *r) {
+    unsigned char speaker_state = port_byte_in(0x61);
+    port_byte_out(0x61, speaker_state & 0xFC);
+    disable_cursor();
+
+    char* vm = (char*)0xb8000;
+    char hex_buf[11];
+
+    for (int i = 0; i < 80 * 25 * 2; i += 2) {
+        vm[i] = ' ';
+        vm[i+1] = 0x1F; 
     }
 
-    // 2. Логика таймера
+    print_at_color(" [ CawOS System Error ] ", 1, 28, 0x1F);
+    print_at_color("A fatal exception has occurred. The system has been halted", 4, 3, 0x1F);
+    print_at_color("to prevent damage to your computer.", 5, 3, 0x1F);
+    print_at_color("Error Type:", 7, 3, 0x1F);
+    print_at_color(error_name, 7, 15, 0x1E);
+    print_at_color("---------------------------------------------------------------", 9, 3, 0x1F);
+    print_at_color("REGS DUMP:", 10, 3, 0x1F);
+    print_at_color("EIP:", 12, 3, 0x1F);
+    int_to_hex(r->eip, hex_buf);
+    print_at_color(hex_buf, 12, 8, 0x1F);
+    print_at_color("CS:", 12, 22, 0x1F);
+    int_to_hex(r->cs, hex_buf);
+    print_at_color(hex_buf, 12, 26, 0x1F);
+    print_at_color("EAX:", 14, 3, 0x1F);
+    int_to_hex(r->eax, hex_buf);
+    print_at_color(hex_buf, 14, 8, 0x1F);
+    print_at_color("EBX:", 14, 22, 0x1F);
+    int_to_hex(r->ebx, hex_buf);
+    print_at_color(hex_buf, 14, 26, 0x1F);
+    print_at_color("ECX:", 15, 3, 0x1F);
+    int_to_hex(r->ecx, hex_buf);
+    print_at_color(hex_buf, 15, 8, 0x1F);
+    print_at_color("EDX:", 15, 22, 0x1F);
+    int_to_hex(r->edx, hex_buf);
+    print_at_color(hex_buf, 15, 26, 0x1F);
+    print_at_color("ESP:", 17, 3, 0x1F);
+    int_to_hex(r->kernel_esp, hex_buf);
+    print_at_color(hex_buf, 17, 8, 0x1F);
+    print_at_color("EBP:", 17, 22, 0x1F);
+    int_to_hex(r->ebp, hex_buf);
+    print_at_color(hex_buf, 17, 26, 0x1F);
+    print_at_color("---------------------------------------------------------------", 19, 3, 0x1F);
+    print_at_color("Please restart your computer.", 21, 3, 0x1F);
+}
+
+void isr_handler(struct registers *r) { 
     if (r->int_no == 32) {
-        watchdog_counter++; 
-        
-        // Визуальный дебаг
-        if (watchdog_counter > WATCHDOG_LIMIT) {
-             draw_panic_screen(" WATCHDOG TIMEOUT ");
-             __asm__ volatile("cli; hlt"); 
-        }
-    } else if (r->int_no < 32) {
-        // Если прилетело прерывание меньше 32 (ошибка CPU)
-        draw_panic_screen(" CPU EXCEPTION ");
-        __asm__ volatile("cli; hlt");
+        port_byte_out(0x20, 0x20);
+        return;
+    } 
+    if (r->int_no == 255) {
+        if (r->int_no >= 32) port_byte_out(0x20, 0x20);
+        return; 
+    } 
+    char* err_desc;
+    switch (r->int_no) {
+        case 0:  err_desc = "DIVIDE BY ZERO"; break;
+        case 13: err_desc = "GENERAL PROTECTION FAULT"; break;
+        case 14: err_desc = "PAGE FAULT"; break;
+        default: err_desc = "UNKNOWN EXCEPTION"; break;
     }
+
+    draw_bsod(err_desc, r);
+    __asm__ volatile("cli; hlt");
 }
 
 void init_timer(int frequency) {
+    if (frequency <= 0) frequency = 100;
     int divisor = 1193180 / frequency;
     port_byte_out(0x43, 0x36);
     port_byte_out(0x40, divisor & 0xFF);
@@ -69,10 +114,12 @@ void init_timer(int frequency) {
 }
 
 void idt_init() {
+    char dbg[16];
+    itoa((uint32_t)&idt, dbg);
+    print_at("IDT:", 0, 0);
+    print_at(dbg, 0, 5);
     idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
     idtp.base = (unsigned int)&idt;
-
-    // Настройка PIC
     port_byte_out(0x20, 0x11);
     port_byte_out(0xA0, 0x11);
     port_byte_out(0x21, 0x20); 
@@ -81,26 +128,22 @@ void idt_init() {
     port_byte_out(0xA1, 0x02);
     port_byte_out(0x21, 0x01);
     port_byte_out(0xA1, 0x01);
-
-    // Маскировка: только IRQ0
     port_byte_out(0x21, 0xFE); 
     port_byte_out(0xA1, 0xFF);
 
     memset(&idt, 0, sizeof(struct idt_entry) * 256);
 
-    // Сначала забиваем ВСЕ 256 гейтов обработчиком isr0 (или любой заглушкой)
     for(int i = 0; i < 256; i++) {
-        idt_set_gate(i, (unsigned int)isr0, 0x08, 0x8E);
+        idt_set_gate(i, (unsigned int)isr_ignore, 0x08, 0x8E);
     }
 
-    // А теперь ставим конкретные
     idt_set_gate(0, (unsigned int)isr0, 0x08, 0x8E);
+    idt_set_gate(13, (unsigned int)isr13, 0x08, 0x8E); 
     idt_set_gate(32, (unsigned int)isr32, 0x08, 0x8E);
 
     idt_load((unsigned int)&idtp);
     init_timer(100);
 }
-
 
 void watchdog_reset() {
     watchdog_counter = 0;

@@ -5,44 +5,55 @@ global idt_load
 
 global isr32
 
+global isr_ignore
+global isr_ignore
+isr_ignore:
+    push dword 0  
+    push dword 255
+    jmp isr_common_stub
+
+global isr13
+isr13:
+    push dword 13
+    jmp isr_common_stub
+
 idt_load:
     mov eax, [esp + 4]
     lidt [eax]
     ret
 
 isr0:
-    push byte 0    ; Код ошибки (заглушка)
-    push byte 0    ; Номер прерывания
+    push byte 0    
+    push byte 0   
     jmp isr_common_stub
 
 isr32:
-    push byte 0    ; Заглушка для кода ошибки
-    push byte 32   ; Номер прерывания (IRQ0)
+    push byte 0   
+    push byte 32  
     jmp isr_common_stub
 
 isr_common_stub:
-    pusha               ; Пушит eax, ecx, edx, ebx, esp, ebp, esi, edi
+    pusha 
+    mov ax, ds
+    push eax 
     
-    mov ax, ds          ; Сохраняем текущий DS
-    push eax            
-    
-    mov ax, 0x10        ; Загружаем сегмент данных ядра
+    mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
 
-    push esp            ; Передаем указатель на структуру registers r
+    mov eax, esp
+    push eax
     call isr_handler
+    add esp, 4
     
-    add esp, 4          ; Очищаем указатель (esp)
-    
-    pop eax             ; Восстанавливаем оригинальный DS
+    pop eax            
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     
-    popa                ; Восстанавливаем все регистры
-    add esp, 8          ; Очищаем номера прерываний (int_no и err_code)
-    iret                ; ВОЗВРАЩАЕМСЯ В ОС
+    popa             
+    add esp, 8         
+    iret               

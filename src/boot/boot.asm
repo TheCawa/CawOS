@@ -31,9 +31,6 @@ start:
     mov si, MSG_SWITCH_PM
     call print_string_16
     
-    ; --- АНТИ-BOOTLOOP ТЕСТ №1 (Real Mode) ---
-    ; Если мы здесь, значит ядро загружено, A20 включен.
-    
     call switch_to_pm
     jmp $
 
@@ -56,27 +53,26 @@ enable_a20:
     ret
 
 load_kernel:
-    mov [RETRY_COUNT], byte 3 ; Попробуем 3 раза, если диск тупит
+    mov [RETRY_COUNT], byte 3
 .retry:
     mov bx, KERNEL_OFFSET
     mov dh, 0
     mov ch, 0
-    mov cl, 2           ; Сектор 2
+    mov cl, 2 
     mov al, KERNEL_SECTORS
     mov ah, 0x02
     mov dl, [BOOT_DRIVE]
     int 0x13
     
-    jnc .success        ; Если флаг переноса (CF) = 0, всё ок!
-    
-    ; Если ошибка — сбрасываем контроллер диска и пробуем еще раз
+    jnc .success    
+
     xor ax, ax          ; ah = 0 (Reset Disk Drive)
     int 0x13
     
     dec byte [RETRY_COUNT]
-    jnz .retry          ; Если еще остались попытки — прыгаем в начало
+    jnz .retry       
     
-    jmp disk_error      ; Если всё равно не вышло — фатал
+    jmp disk_error   
 
 .success:
     ret
@@ -96,13 +92,27 @@ disk_sectors_error:
 switch_to_pm:
     cli
     lgdt [gdt_descriptor]
+
+    
     mov eax, cr0
     or eax, 1
     mov cr0, eax
-    ; ВНИМАНИЕ: Если здесь зависает или ребутит — проблема в GDT
     jmp 0x08:init_pm 
 
-; --- GDT с выравниванием ---
+[bits 32]
+init_pm:
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax 
+    mov ebp, 0x90000 
+    mov esp, ebp
+    call KERNEL_OFFSET
+    jmp $
+
+
 align 4
 gdt_start:
     dq 0x0
@@ -124,29 +134,7 @@ gdt_end:
 
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
-    dd gdt_start
-
-[bits 32]
-init_pm:
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-    
-    mov ebp, 0x90000 
-    mov esp, ebp
-
-    ; --- АНТИ-BOOTLOOP ТЕСТ №2 (Protected Mode) ---
-    ; Пишем 'OK' в угол экрана красным цветом.
-    ; Если увидишь OK, значит переход в 32 бита УСПЕШЕН.
-    mov word [0xb8000], 0x4f4b ; 'K' (0x4b), фон красный (0x4)
-    mov word [0xb8002], 0x4f4f ; 'O' (0x4f), фон красный (0x4)
-
-    ; Если после этого ребут — значит падает само ядро в KERNEL_OFFSET
-    call KERNEL_OFFSET
-    jmp $
+    dd 0x7c00 + (gdt_start - $$)
 
 BOOT_DRIVE          db 0
 MSG_BOOTING         db "CawOS Booting...", 0x0D, 0x0A, 0

@@ -5,7 +5,6 @@ switch_to_pm:
     mov eax, cr0
     or eax, 0x1
     mov cr0, eax
-    ; Дальний прыжок обязателен для переключения сегмента кода на 32-битный
     jmp 0x08:init_pm_32 
 
 [bits 32]

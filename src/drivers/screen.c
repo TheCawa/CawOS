@@ -10,7 +10,7 @@ void clear_screen() {
     }
 }
 
-void print_at_color(char* message, int row, int col, unsigned char color) {
+void print_at_color(const char* message, int row, int col, unsigned char color) {
     if (row < 0) row = 0;
     char* video_memory = (char*) 0xb8000;
     int offset = (row * 80 + col) * 2;
@@ -22,6 +22,11 @@ void print_at_color(char* message, int row, int col, unsigned char color) {
 
 void print_at(char* message, int row, int col) {
     print_at_color(message, row, col, current_color);
+}
+
+void disable_cursor() {
+    port_byte_out(0x3D4, 0x0A);
+    port_byte_out(0x3D5, 0x20);
 }
 
 void update_cursor(int row, int col) {

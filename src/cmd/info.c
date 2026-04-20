@@ -12,7 +12,7 @@ void cmd_info(char* args, int* row) {
     int mem_mb = get_total_memory() + 1;
     itoa(mem_mb, mem_str);
 
-    print_at("CawOS v0.2.0 (Stable CLI)", *row, 0); (*row)++;
+    print_at("CawOS v0.2.1", *row, 0); (*row)++;
     print_at("CPU: ", *row, 0); print_at(vendor, *row, 5); (*row)++;
     print_at("RAM: ", *row, 0); print_at(mem_str, *row, 5); 
     print_at(" MB", *row, 5 + strlen(mem_str)); (*row)++;

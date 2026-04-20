@@ -6,26 +6,20 @@
 #include "idt.h"
 #include "commands.h"
 
-// Внешние функции из ASM или других модулей
 extern void watchdog_reset();
 
 void __main() {} 
 
 void main() {
-    // 1. Инициализация подсистем
     idt_init();
-    fs_init();
-    
-    // 2. Стартовый экран
+    fs_init(); 
     clear_screen();
-    draw_logo();      
+    draw_logo();
     beep();           
     watchdog_reset();
     clear_screen();
-    print_at_color("CawOS v0.2.0", 0, 0, 0x0B);
+    print_at_color("CawOS v0.2.1", 0, 0, 0x0B);
     print_at("Type 'help' to see all commands.", 1, 0);
-    
-    // 3. Переменные CLI
     char key_buffer[256];
     int col = 2, row = 2, buffer_idx = 0;
 
@@ -35,7 +29,6 @@ void main() {
     watchdog_reset();
     __asm__ volatile("sti");
 
-    // 4. Главный цикл ОС
     while(1) {
         watchdog_reset();
 

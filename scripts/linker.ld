@@ -10,9 +10,9 @@ SECTIONS
     .bss    : { *(.bss) *(COMMON) }
 
     .cmd : ALIGN(4) {
-        __start_cmd = .;    /* Создаем метку начала списка команд */
-        KEEP(*(.cmd))       /* Сваливаем сюда все REGISTER_COMMAND из всех файлов */
-        __stop_cmd = .;     /* Создаем метку конца */
+        __start_cmd = .; 
+        KEEP(*(.cmd))   
+        __stop_cmd = .;
     }
 
     /DISCARD/ : { *(.comment) *(.eh_frame) }

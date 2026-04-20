@@ -1,7 +1,6 @@
 #include "util.h"
 #include "io.h"
 
-// Добавлен const в параметры s1 и s2
 int strcmp(const char* s1, const char* s2) {
     int i;
     for (i = 0; s1[i] == s2[i]; i++) {
@@ -10,7 +9,6 @@ int strcmp(const char* s1, const char* s2) {
     return s1[i] - s2[i];
 }
 
-// Добавлен const в параметр src
 void strcpy(char* dest, const char* src) {
     int i = 0;
     while (src[i] != '\0') {
@@ -20,7 +18,6 @@ void strcpy(char* dest, const char* src) {
     dest[i] = '\0';
 }
 
-// Добавлен const в параметры s1 и s2
 int strncmp(const char* s1, const char* s2, int n) {
     for (int i = 0; i < n; i++) {
         if (s1[i] != s2[i]) return s1[i] - s2[i];
@@ -34,6 +31,11 @@ void memset(void* dest, unsigned char val, int len) {
     for ( ; len != 0; len--) *temp++ = val;
 }
 
+void memcpy(void* dest, const void* src, int len) {
+    const unsigned char* sp = (const unsigned char*)src;
+    unsigned char* dp = (unsigned char*)dest;
+    for (; len != 0; len--) *dp++ = *sp++;
+}
 
 void get_cpu_info(char* vendor) {
     unsigned int ebx, ecx, edx;
@@ -47,18 +49,17 @@ void get_cpu_info(char* vendor) {
     vendor[12] = '\0';
 }
 
-// Функция для чтения из портов CMOS
 unsigned short get_total_memory() {
     unsigned short total;
     unsigned char low, high;
 
-    port_byte_out(0x70, 0x30);       // Индекс 0x30: Младший байт памяти
+    port_byte_out(0x70, 0x30);       
     low = port_byte_in(0x71);
-    port_byte_out(0x70, 0x31);       // Индекс 0x31: Старший байт памяти
+    port_byte_out(0x70, 0x31);       
     high = port_byte_in(0x71);
 
-    total = low | (high << 8);       // Склеиваем байты
-    return total / 1024;             // Переводим из КБ в МБ
+    total = low | (high << 8);       
+    return total / 1024;            
 }
 
 
@@ -78,7 +79,6 @@ void itoa(int n, char str[]) {
     if (sign < 0) str[i++] = '-';
     str[i] = '\0';
 
-    // Переворачиваем строку
     for (int j = 0, k = i-1; j < k; j++, k--) {
         char temp = str[j];
         str[j] = str[k];
