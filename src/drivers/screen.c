@@ -11,7 +11,7 @@ void clear_screen() {
 }
 
 void print_at_color(const char* message, int row, int col, unsigned char color) {
-    if (row < 0) row = 0;
+    if (row >= 25) return;
     char* video_memory = (char*) 0xb8000;
     int offset = (row * 80 + col) * 2;
     for (int i = 0; message[i] != 0; i++) {
@@ -70,4 +70,25 @@ void draw_logo() {
     print_at_color("   \\/_____/    \\/_/\\/_/    \\/_/   \\/_/    \\/_____/    \\/_____/", 11, 12, color);
     print_at_color("          >> CawOS is loading your dreams... <<", 14, 18, 0x0E);
     for(volatile int i = 0; i < 400000000; i++); 
+}
+
+void scroll() {
+    char* vm = (char*) 0xb8000;
+    for (int i = 0; i < 80 * 24 * 2; i++) {
+        vm[i] = vm[i + 80 * 2];
+    }
+
+    for (int i = 80 * 24 * 2; i < 80 * 25 * 2; i += 2) {
+        vm[i] = ' ';
+        vm[i+1] = 0x0F;
+    }
+}
+
+void print_line_scroll(const char* msg, int col, int* row, unsigned char color) {
+    if (*row >= 24) {
+        scroll();
+        (*row)--;
+    }
+    print_at_color(msg, *row, col, color);
+    (*row)++;
 }

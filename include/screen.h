@@ -13,5 +13,7 @@ void draw_logo();
 void play_sound(unsigned int nFrequence);
 void nosound();
 void beep();
+void scroll();
+void print_line_scroll(const char* msg, int col, int* row, unsigned char color);
 
 #endif

@@ -6,7 +6,7 @@ extern void beep();
 void cmd_beep(char* args, int* row) {
     (void)args;
     beep();
-    print_at("BEEEP!", *row, 0);
+    print_line_scroll("BEEEP!", 0, row, 0x0F);
 }
 
 REGISTER_COMMAND("beep", cmd_beep, 0);

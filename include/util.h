@@ -6,6 +6,7 @@ int strncmp(const char* s1, const char* s2, int n);
 int strlen(const char* s);
 
 void strcpy(char* dest, const char* src);
+void strcat(char* dest, const char* src);
 void memset(void* dest, unsigned char val, int len);
 void memcpy(void* dest, const void* src, int len);
 
@@ -13,5 +14,8 @@ void get_cpu_info(char* buffer);
 unsigned short get_total_memory();
 void itoa(int n, char str[]);
 int atoi(const char* s);
+
+extern void feed_entropy(unsigned char val);
+int rand();
 
 #endif

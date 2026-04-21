@@ -9,19 +9,16 @@
 
 void cmd_cat(char* args, int* row) {
     if (args == NULL || args[0] == '\0') {
-        print_at_color("Usage: cat <filename>", *row, 0, 0x0E);
-        (*row)++;
+        print_line_scroll("Usage: cat <filename>", 0, row, 0x0E);
         return;
     }
     static char file_buffer[2048];
     memset(file_buffer, 0, 2048);
 
     if (fs_load_to_memory(args, (uint8_t*)file_buffer)) {
-        print_at_color(file_buffer, *row, 0, 0x0E);
-        (*row)++;
+        print_line_scroll(file_buffer, 0, row, 0x0E);
     } else {
-        print_at_color("Error: File not found.", *row, 0, 0x0C);
-        (*row)++;
+        print_line_scroll("Error: File not found.", 0, row, 0x0C);
     }
 }
 

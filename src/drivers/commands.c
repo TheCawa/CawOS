@@ -14,9 +14,9 @@ void execute_command(char* input, int* row) {
     command_t* cmd;
     for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
         int name_len = strlen(cmd->name);
-
         if (cmd->has_args) {
-            if (strncmp(input, cmd->name, name_len) == 0 && (input[name_len] == ' ' || input[name_len] == '\0')) {
+            if (strncmp(input, cmd->name, name_len) == 0 && 
+                (input[name_len] == ' ' || input[name_len] == '\0')) {
                 char* args = (input[name_len] == ' ') ? (input + name_len + 1) : "";
                 cmd->func(args, row);
                 return;
@@ -28,6 +28,5 @@ void execute_command(char* input, int* row) {
             }
         }
     }
-    print_at_color("Unknown command!", *row, 0, 0x0C);
-    (*row)++;
+    print_line_scroll("Unknown command!", 0, row, 0x0C);
 }

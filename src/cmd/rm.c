@@ -5,16 +5,14 @@
 
 void cmd_rm(char* args, int* row) {
     if (args == 0 || args[0] == '\0') {
-        print_at("Usage: rm <filename>", *row, 0);
-        (*row)++; return;
+        print_line_scroll("Usage: rm <filename>", 0, row, 0x0E);
+        return;
     }
-
     if (fs_delete(args)) {
-        print_at_color("File removed.", *row, 0, 0x0A);
+        print_line_scroll("File removed.", 0, row, 0x0A);
     } else {
-        print_at_color("Error: File not found.", *row, 0, 0x0C);
+        print_line_scroll("Error: File not found.", 0, row, 0x0C);
     }
-    (*row)++;
 }
 
 REGISTER_COMMAND("rm", cmd_rm, 1);

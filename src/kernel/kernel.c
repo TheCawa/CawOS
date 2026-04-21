@@ -19,7 +19,7 @@ void main() {
     beep();           
     watchdog_reset();
     clear_screen();
-    print_at_color("CawOS v0.2.2", 0, 0, 0x0B);
+    print_at_color("CawOS v0.2.3", 0, 0, 0x0B);
     print_at("Type 'help' to see all commands.", 1, 0);
     enable_cursor(13, 15);
     char key_buffer[256];
@@ -36,28 +36,27 @@ void main() {
 
         if (port_byte_in(0x64) & 0x01) {
             unsigned char scancode = port_byte_in(0x60);
-            
+            feed_entropy(scancode);
             if (scancode < 0x80) {
                 if (scancode == ENTER) {
                     key_buffer[buffer_idx] = '\0';
-                    row++; 
-                    
+                    row++;
+
                     if (buffer_idx > 0) {
                         execute_command(key_buffer, &row);
-                        row++; 
                     }
 
-                    buffer_idx = 0; 
+
+                    if (row >= 24) {
+                        scroll();
+                        row--;
+                    }
+
+                    buffer_idx = 0;
                     col = 2;
-
-                    if (row >= 22) {
-                        clear_screen(); 
-                        row = 0; 
-                    }
-                    
                     print_at("> ", row, 0);
                     update_cursor(row, col);
-                } 
+                }
                 else if (scancode == BACKSPACE) {
                     if (buffer_idx > 0) {
                         buffer_idx--; 

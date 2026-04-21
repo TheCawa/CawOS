@@ -1,6 +1,8 @@
 #include "util.h"
 #include "io.h"
 
+static unsigned int state = 0xACE1;
+
 int strcmp(const char* s1, const char* s2) {
     int i;
     for (i = 0; s1[i] == s2[i]; i++) {
@@ -24,6 +26,16 @@ int strncmp(const char* s1, const char* s2, int n) {
         if (s1[i] == '\0') return 0;
     }
     return 0;
+}
+
+void strcat(char* dest, const char* src) {
+    int dest_len = strlen(dest);
+    int i = 0;
+    while (src[i] != '\0') {
+        dest[dest_len + i] = src[i];
+        i++;
+    }
+    dest[dest_len + i] = '\0';
 }
 
 void memset(void* dest, unsigned char val, int len) {
@@ -115,4 +127,17 @@ int atoi(const char* s) {
     }
 
     return sign * res;
+}
+
+
+void feed_entropy(unsigned char scancode) {
+    state ^= (unsigned int)scancode;
+    state ^= (state << 13);
+    state ^= (state >> 17);
+    state ^= (state << 5);
+}
+
+int rand() {
+    state = (state * 1103515245 + 12345) & 0x7FFFFFFF;
+    return state % 100;
 }

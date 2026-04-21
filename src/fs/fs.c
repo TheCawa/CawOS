@@ -28,20 +28,24 @@ void fs_list(int* row) {
     int found = 0;
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists) {
-            print_at("FILE: ", *row, 0);
-            print_at(fs[i].name, *row, 6);
-            print_at("SIZE:", *row, 22);
+            char line[64];
+            memset(line, 0, 64);
+            strcpy(line, "FILE: ");
+            strcat(line, fs[i].name);
+            print_line_scroll(line, 0, row, 0x0F);
+            char size_line[32];
+            memset(size_line, 0, 32);
+            strcpy(size_line, "SIZE: ");
             char s_buf[16];
             itoa(fs[i].size_bytes, s_buf);
-            print_at(s_buf, *row, 28);
-            print_at(" bytes", *row, 28 + strlen(s_buf));
-            (*row)++;
+            strcat(size_line, s_buf);
+            strcat(size_line, " bytes");
+            print_line_scroll(size_line, 6, row, 0x0F);
             found = 1;
         }
     }
     if (!found) {
-        print_at("Drive is empty.", *row, 0);
-        (*row)++;
+        print_line_scroll("Drive is empty.", 0, row, 0x0F);
     }
 }
 

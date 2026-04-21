@@ -3,10 +3,8 @@
 #include "screen.h"
 
 void cmd_ls(char* args, int* row) {
-    (void)args; 
-    print_at_color("Files:", *row, 0, 0x0B);
-    (*row)++;
-    
+    (void)args;
+    print_line_scroll("Files:", 0, row, 0x0B);
     fs_list(row);
 }
 
