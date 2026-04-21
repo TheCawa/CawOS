@@ -12,5 +12,6 @@ void memcpy(void* dest, const void* src, int len);
 void get_cpu_info(char* buffer);
 unsigned short get_total_memory();
 void itoa(int n, char str[]);
+int atoi(const char* s);
 
 #endif

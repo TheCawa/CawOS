@@ -6,24 +6,25 @@ echo =================================
 echo          Building CawOS
 echo =================================
 
+if not exist build mkdir build
+if not exist build\apps mkdir build\apps
+
 :: 1. ASM
 echo [ASM] Compiling low-level objects...
 nasm src/boot/kernel_entry.asm -f elf32 -o build/kernel_entry.o || goto error
 nasm src/cpu/interrupt.asm -f elf32 -o build/interrupt.o || goto error
 
-:: 2. C модули (Упрощенная компиляция всех .c файлов)
+:: 2. C
 echo [C] Compiling kernel modules...
 for /r src %%f in (*.c) do (
-    :: Пропускаем файлы из папки bin, они компилируются отдельно позже
     echo %%f | findstr /I "\\bin\\" >nul
     if !errorlevel! neq 0 (
         echo   Compiling %%~nxf...
-        :: Чтобы не было коллизий, добавляем префикс пути к имени .o файла
         i686-elf-gcc -ffreestanding -fno-pie -fno-stack-protector -m32 -Iinclude -Wall -O2 -c "%%f" -o "build/%%~nf.o" || goto error
     )
 )
 
-:: 3. Сбор списка объектников (kernel_entry ОБЯЗАТЕЛЬНО первым)
+:: 3. Сбор списка объектников
 set "CORE_OBJS=build/kernel_entry.o build/interrupt.o"
 for %%i in (build\*.o) do (
     if not "%%~nxi"=="kernel_entry.o" (

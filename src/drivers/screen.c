@@ -29,6 +29,13 @@ void disable_cursor() {
     port_byte_out(0x3D5, 0x20);
 }
 
+void enable_cursor(unsigned char cursor_start, unsigned char cursor_end) {
+    port_byte_out(0x3D4, 0x0A);
+    port_byte_out(0x3D5, (port_byte_in(0x3D5) & 0xC0) | cursor_start);
+    port_byte_out(0x3D4, 0x0B);
+    port_byte_out(0x3D5, (port_byte_in(0x3D5) & 0xE0) | cursor_end);
+}
+
 void update_cursor(int row, int col) {
     if (row < 0) row = 0;
     unsigned short position = row * 80 + col;

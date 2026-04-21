@@ -6,9 +6,9 @@
 
 struct idt_entry {
     unsigned short base_lo;
-    unsigned short sel;        // Сегмент кода в GDT (у нас 0x08)
+    unsigned short sel;      
     unsigned char  always0;
-    unsigned char  flags;      // Флаги доступа
+    unsigned char  flags;
     unsigned short base_hi;
 } __attribute__((packed));
 
@@ -24,7 +24,6 @@ void watchdog_reset();
 extern volatile int watchdog_counter;
 void idt_reload();
 
-// Сюда будут прилетать все прерывания
 struct registers {
     unsigned int ds;                  
     unsigned int edi, esi, ebp, kernel_esp, ebx, edx, ecx, eax;

@@ -14,12 +14,14 @@ void main() {
     idt_init();
     fs_init(); 
     clear_screen();
+    disable_cursor();
     draw_logo();
     beep();           
     watchdog_reset();
     clear_screen();
-    print_at_color("CawOS v0.2.1", 0, 0, 0x0B);
+    print_at_color("CawOS v0.2.2", 0, 0, 0x0B);
     print_at("Type 'help' to see all commands.", 1, 0);
+    enable_cursor(13, 15);
     char key_buffer[256];
     int col = 2, row = 2, buffer_idx = 0;
 

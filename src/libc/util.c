@@ -37,16 +37,29 @@ void memcpy(void* dest, const void* src, int len) {
     for (; len != 0; len--) *dp++ = *sp++;
 }
 
-void get_cpu_info(char* vendor) {
-    unsigned int ebx, ecx, edx;
-    __asm__ __volatile__("cpuid" 
-                         : "=b"(ebx), "=c"(ecx), "=d"(edx) 
-                         : "a"(0));
-    
-    ((unsigned int*)vendor)[0] = ebx;
-    ((unsigned int*)vendor)[1] = edx;
-    ((unsigned int*)vendor)[2] = ecx;
-    vendor[12] = '\0';
+void get_cpu_info(char* out_str) {
+    unsigned int regs[4];
+    __asm__ __volatile__("cpuid" : "=a"(regs[0]) : "a"(0x80000000));
+
+    if (regs[0] >= 0x80000004) {
+        for (unsigned int i = 0; i < 3; i++) {
+            __asm__ __volatile__("cpuid" 
+                : "=a"(regs[0]), "=b"(regs[1]), "=c"(regs[2]), "=d"(regs[3]) 
+                : "a"(0x80000002 + i));
+            
+            ((unsigned int*)out_str)[i * 4 + 0] = regs[0];
+            ((unsigned int*)out_str)[i * 4 + 1] = regs[1];
+            ((unsigned int*)out_str)[i * 4 + 2] = regs[2];
+            ((unsigned int*)out_str)[i * 4 + 3] = regs[3];
+        }
+        out_str[47] = '\0';
+    } else {
+        __asm__ __volatile__("cpuid" : "=b"(regs[1]), "=d"(regs[3]), "=c"(regs[2]) : "a"(0));
+        ((unsigned int*)out_str)[0] = regs[1];
+        ((unsigned int*)out_str)[1] = regs[3];
+        ((unsigned int*)out_str)[2] = regs[2];
+        out_str[12] = '\0';
+    }
 }
 
 unsigned short get_total_memory() {
@@ -84,4 +97,22 @@ void itoa(int n, char str[]) {
         str[j] = str[k];
         str[k] = temp;
     }
+}
+
+int atoi(const char* s) {
+    int res = 0;
+    int sign = 1;
+    int i = 0;
+
+    if (s[0] == '-') {
+        sign = -1;
+        i++;
+    }
+
+    for (; s[i] != '\0'; ++i) {
+        if (s[i] < '0' || s[i] > '9') break;
+        res = res * 10 + s[i] - '0';
+    }
+
+    return sign * res;
 }
