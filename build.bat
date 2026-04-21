@@ -63,6 +63,7 @@ if exist scripts/pack_fs.py (
     python scripts/pack_fs.py os-image.bin build/apps/
 )
 
+python scripts/pad_image.py os-image.bin 524288
 
 
 echo.
