@@ -114,10 +114,6 @@ void init_timer(int frequency) {
 }
 
 void idt_init() {
-    char dbg[16];
-    itoa((uint32_t)&idt, dbg);
-    print_at("IDT:", 0, 0);
-    print_at(dbg, 0, 5);
     idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
     idtp.base = (unsigned int)&idt;
     port_byte_out(0x20, 0x11);
