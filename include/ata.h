@@ -16,8 +16,9 @@ typedef struct {
 
 extern ata_device_t ata_devices[4];
 
-ata_status_t ata_identify(ata_device_t *dev, uint16_t *buffer);
-ata_status_t ata_read28(ata_device_t *dev, uint32_t lba, uint8_t sector_count, uint8_t *buffer);
-ata_status_t ata_write28(ata_device_t *dev, uint32_t lba, uint8_t sector_count, uint8_t *buffer);
+void ata_init();
+
+ata_status_t ata_read_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, uint8_t* buffer);
+ata_status_t ata_write_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, const uint8_t* buffer);
 
 #endif

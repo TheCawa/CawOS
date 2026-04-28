@@ -1,43 +1,43 @@
 import os
 import struct
 
-SUPERBLOCK_LBA = 64
 ROOT_DIR_LBA = 65
-DATA_START_LBA = 71
+DATA_START_LBA = 200
 SECTOR_SIZE = 512
+FS_SECTORS = 4
 
 def pack_fs(image_path, bin_dir):
-    with open(image_path, 'ab') as img:
-        current_size = os.path.getsize(image_path)
-        target_padding = SUPERBLOCK_LBA * SECTOR_SIZE
-        if current_size < target_padding:
-            img.write(b'\x00' * (target_padding - current_size))
-        files = [f for f in os.listdir(bin_dir) if f.endswith('.bin')]
-        file_entries = []
-        current_lba = DATA_START_LBA
+    files = [f for f in os.listdir(bin_dir) if f.endswith('.bin')]
+    entries = b''
+    current_lba = DATA_START_LBA
+    for f_name in files:
+        path = os.path.join(bin_dir, f_name)
+        size = os.path.getsize(path)
+        name = f_name.replace('.bin', '').encode('ascii')
+        entry = struct.pack('32s32sIIBBBB',
+                            name,
+                            b'/',        # dir
+                            current_lba,
+                            size,
+                            1,           # is_executable
+                            1,           # exists
+                            0,           # is_dir
+                            0)           # reserved
+        entries += entry
+        
+        content_size = size
+        if content_size % SECTOR_SIZE != 0:
+            content_size += SECTOR_SIZE - (content_size % SECTOR_SIZE)
+        current_lba += content_size // SECTOR_SIZE
 
-        for f_name in files:
-            path = os.path.join(bin_dir, f_name)
-            size = os.path.getsize(path)
-            entry = struct.pack('32sIIBB', 
-                                f_name.replace('.bin', '').encode('ascii'), 
-                                current_lba, 
-                                size, 
-                                1, 1)
-            file_entries.append(entry)
-            with open(path, 'rb') as f_data:
-                content = f_data.read()
-                if len(content) % SECTOR_SIZE != 0:
-                    content += b'\x00' * (SECTOR_SIZE - (len(content) % SECTOR_SIZE))
-            current_lba += (len(content) // SECTOR_SIZE)
+    entries += b'\x00' * (SECTOR_SIZE * FS_SECTORS - len(entries))
+    with open(image_path, 'r+b') as img:
         img.seek(ROOT_DIR_LBA * SECTOR_SIZE)
-        for entry in file_entries:
-            img.write(entry)
-        img.write(b'\x00' * (SECTOR_SIZE * 2 - len(file_entries) * 44))
+        img.write(entries)
         img.seek(DATA_START_LBA * SECTOR_SIZE)
         for f_name in files:
-            with open(os.path.join(bin_dir, f_name), 'rb') as f_data:
-                content = f_data.read()
+            with open(os.path.join(bin_dir, f_name), 'rb') as f:
+                content = f.read()
                 img.write(content)
                 if len(content) % SECTOR_SIZE != 0:
                     img.write(b'\x00' * (SECTOR_SIZE - (len(content) % SECTOR_SIZE)))

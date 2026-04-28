@@ -10,7 +10,7 @@ if not exist %IMAGE% (
 echo Starting CawOS...
 
 qemu-system-i386 ^
-    -drive format=raw,file=%IMAGE%,if=ide,index=0,media=disk,readonly=off ^
+    -drive format=raw,file=%IMAGE%,if=ide,index=0,media=disk,readonly=off,cache=none ^
     -audiodev driver=dsound,id=spk ^
     -machine pcspk-audiodev=spk ^
     -vga std ^

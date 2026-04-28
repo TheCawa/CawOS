@@ -6,3 +6,4 @@ build/
 *.iso
 os-image.bin
 qemu_vga.log
+extracted/

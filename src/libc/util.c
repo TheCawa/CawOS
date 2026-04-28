@@ -1,7 +1,11 @@
 #include "util.h"
 #include "io.h"
+#include "idt.h"
 
 static unsigned int state = 0xACE1;
+extern unsigned int bios_get_mem();
+
+
 
 int strcmp(const char* s1, const char* s2) {
     int i;
@@ -75,23 +79,24 @@ void get_cpu_info(char* out_str) {
 }
 
 unsigned short get_total_memory() {
-    unsigned short total;
-    unsigned char low, high;
-
-    port_byte_out(0x70, 0x30);       
-    low = port_byte_in(0x71);
-    port_byte_out(0x70, 0x31);       
-    high = port_byte_in(0x71);
-
-    total = low | (high << 8);       
-    return total / 1024;            
+    bios_get_mem();
+    return *(unsigned short*)0x9D04;
 }
-
 
 int strlen(const char* s) {
     int i = 0;
     while (s[i] != '\0') i++;
     return i;
+}
+
+char* strchr(const char* s, int c) {
+    while (*s != '\0') {
+        if (*s == (char)c) {
+            return (char*)s;
+        }
+        s++;
+    }
+    return 0;
 }
 
 void itoa(int n, char str[]) {
@@ -129,6 +134,55 @@ int atoi(const char* s) {
     return sign * res;
 }
 
+float atof(char* s) {
+    float res = 0.0f;
+    float div = 1.0f;
+    int decimal = 0;
+    int sign = 1;
+
+    if (*s == '-') {
+        sign = -1;
+        s++;
+    }
+
+    while (*s) {
+        if (*s == '.' || *s == ',') {
+            decimal = 1;
+            s++;
+            continue;
+        }
+        int digit = *s - '0';
+        if (digit >= 0 && digit <= 9) {
+            if (decimal) {
+                div *= 10.0f;
+                res = res + (float)digit / div;
+            } else {
+                res = res * 10.0f + (float)digit;
+            }
+        }
+        s++;
+    }
+    return res * (float)sign;
+}
+
+void ftoa(float n, char* res, int precision) {
+    if (n < 0) {
+        *res++ = '-';
+        n = -n;
+    }
+    int ipart = (int)n;
+    float fpart = n - (float)ipart;
+    itoa(ipart, res);
+    if (precision > 0) {
+        int len = strlen(res);
+        res[len] = '.';
+        for (int i = 0; i < precision; i++) {
+            fpart *= 10.0f;
+        }
+        int ifpart = (int)(fpart + 0.5f);
+        itoa(ifpart, res + len + 1);
+    }
+}
 
 void feed_entropy(unsigned char scancode) {
     state ^= (unsigned int)scancode;
@@ -137,7 +191,58 @@ void feed_entropy(unsigned char scancode) {
     state ^= (state << 5);
 }
 
-int rand() {
+int rand(int min, int max) {
     state = (state * 1103515245 + 12345) & 0x7FFFFFFF;
-    return state % 100;
+    if (min > max) {
+        int temp = min;
+        min = max;
+        max = temp;
+    }
+    if (min == max) {
+        return min;
+    }
+    return (state % (max - min + 1)) + min;
+}
+
+unsigned int hash(char* str) {
+    unsigned int h = 5381;
+    int c;
+    while ((c = *str++)) {
+        h = ((h << 5) + h) + c; 
+    }
+    return h;
+}
+
+int strcasecmp(const char* s1, const char* s2) {
+    int i;
+    for (i = 0; ; i++) {
+        char c1 = s1[i];
+        char c2 = s2[i];
+        if (c1 >= 'A' && c1 <= 'Z') c1 += 32;
+        if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
+        if (c1 != c2) return c1 - c2;
+        if (c1 == '\0') return 0;
+    }
+}
+
+int strncasecmp(const char* s1, const char* s2, int n) {
+    for (int i = 0; i < n; i++) {
+        char c1 = s1[i];
+        char c2 = s2[i];
+        if (c1 >= 'A' && c1 <= 'Z') c1 += 32;
+        if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
+        if (c1 != c2) return c1 - c2;
+        if (c1 == '\0') return 0;
+    }
+    return 0;
+}
+
+void sleep_ms(uint32_t ms) {
+    uint32_t ticks_to_wait = ms / 10; 
+    if (ticks_to_wait == 0) ticks_to_wait = 1;
+
+    uint32_t start_tick = system_ticks;
+    while ((system_ticks - start_tick) < ticks_to_wait) {
+        __asm__ volatile("hlt"); 
+    }
 }

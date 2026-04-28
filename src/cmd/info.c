@@ -11,7 +11,7 @@ void cmd_info(char* args, int* row) {
     get_cpu_info(cpu_model);
     int mem_mb = get_total_memory() + 1;
     itoa(mem_mb, mem_str);
-    print_line_scroll("CawOS v0.2.3", 0, row, 0x0B);
+    print_line_scroll("CawOS v0.2.5", 0, row, 0x0B);
     char cpu_line[64];
     memset(cpu_line, 0, 64);
     strcpy(cpu_line, "CPU: ");

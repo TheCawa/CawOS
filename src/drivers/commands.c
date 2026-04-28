@@ -13,16 +13,16 @@ void execute_command(char* input, int* row) {
 
     command_t* cmd;
     for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
-        int name_len = strlen(cmd->name);
+        int name_len = strlen(cmd->name);    
         if (cmd->has_args) {
-            if (strncmp(input, cmd->name, name_len) == 0 && 
-                (input[name_len] == ' ' || input[name_len] == '\0')) {
+            if (strncasecmp(input, cmd->name, name_len) == 0 && 
+                (input[name_len] == ' ' || input[name_len] == '\0')) {              
                 char* args = (input[name_len] == ' ') ? (input + name_len + 1) : "";
                 cmd->func(args, row);
                 return;
             }
         } else {
-            if (strcmp(input, cmd->name) == 0) {
+            if (strcasecmp(input, cmd->name) == 0) {
                 cmd->func(NULL, row);
                 return;
             }

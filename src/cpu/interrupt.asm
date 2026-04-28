@@ -2,9 +2,8 @@
 extern isr_handler
 global isr0
 global idt_load
-
 global isr32
-
+global isr33
 global isr_ignore
 global isr_ignore
 isr_ignore:
@@ -30,6 +29,11 @@ isr0:
 isr32:
     push byte 0   
     push byte 32  
+    jmp isr_common_stub
+
+isr33:
+    push dword 0
+    push dword 33
     jmp isr_common_stub
 
 isr_common_stub:

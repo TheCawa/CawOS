@@ -1,22 +1,21 @@
 #include "screen.h"
 #include "io.h"
+#include "util.h"
 
 unsigned char current_color = 0x0F;
 
 void clear_screen() {
     char* video_memory = (char*) 0xb8000;
     for (int i = 0; i < 80 * 25 * 2; i += 2) {
-        video_memory[i] = ' '; video_memory[i+1] = 0x0f;
+        video_memory[i] = ' '; 
+        video_memory[i+1] = 0x0F;
     }
 }
 
 void print_at_color(const char* message, int row, int col, unsigned char color) {
     if (row >= 25) return;
-    char* video_memory = (char*) 0xb8000;
-    int offset = (row * 80 + col) * 2;
     for (int i = 0; message[i] != 0; i++) {
-        video_memory[offset + i*2] = message[i];
-        video_memory[offset + i*2 + 1] = color;
+        print_char_at(message[i], row, col + i, color);
     }
 }
 
@@ -43,22 +42,6 @@ void update_cursor(int row, int col) {
     port_byte_out(0x3D4, 15); port_byte_out(0x3D5, (unsigned char)(position & 0xFF));
 }
 
-void play_sound(unsigned int nFrequence) {
-    unsigned int Div = 1193180 / nFrequence;
-    port_byte_out(0x43, 0xb6);
-    port_byte_out(0x42, (unsigned char) (Div) );
-    port_byte_out(0x42, (unsigned char) (Div >> 8));
-    unsigned char tmp = port_byte_in(0x61);
-    if (tmp != (tmp | 3)) port_byte_out(0x61, tmp | 3);
-}
-
-void nosound() { port_byte_out(0x61, port_byte_in(0x61) & 0xFC); }
-
-void beep() {
-    play_sound(1000);
-    for(volatile int i = 0; i < 50000000; i++); 
-    nosound();
-}
 
 void draw_logo() {
     clear_screen();
@@ -69,7 +52,7 @@ void draw_logo() {
     print_at_color("  \\ \\_____\\   \\ \\_\\ \\_\\   \\ \\__/\".~\\_\\   \\ \\_____\\   \\/\\_____\\", 10, 12, color);
     print_at_color("   \\/_____/    \\/_/\\/_/    \\/_/   \\/_/    \\/_____/    \\/_____/", 11, 12, color);
     print_at_color("          >> CawOS is loading your dreams... <<", 14, 18, 0x0E);
-    for(volatile int i = 0; i < 400000000; i++); 
+    sleep_ms(1600); 
 }
 
 void scroll() {
@@ -91,4 +74,12 @@ void print_line_scroll(const char* msg, int col, int* row, unsigned char color) 
     }
     print_at_color(msg, *row, col, color);
     (*row)++;
+}
+
+void print_char_at(char c, int row, int col, unsigned char color) {
+    if (row >= 25 || col >= 80) return;
+    char* video_memory = (char*) 0xb8000;
+    int offset = (row * 80 + col) * 2;
+    video_memory[offset] = c;
+    video_memory[offset + 1] = color;
 }

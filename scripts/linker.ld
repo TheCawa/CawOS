@@ -2,14 +2,20 @@ ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x1000;
+    . = 0x10000; 
 
-    .text   : { *(.text) }
+    .text   : { *(.text*) }
     .rodata : { *(.rodata*) }
     .data   : { *(.data) }
-    .bss    : { *(.bss) *(COMMON) }
+    .bss : {
+        __bss_start = .;
+        *(.bss)
+        *(COMMON)
+        . = ALIGN(4);
+        __bss_end = .;
+    }
 
-    .cmd : ALIGN(4) {
+    .cmd : ALIGN(16) {
         __start_cmd = .; 
         KEEP(*(.cmd))   
         __stop_cmd = .;

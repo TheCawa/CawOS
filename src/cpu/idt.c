@@ -11,9 +11,15 @@ extern void idt_load(unsigned int);
 extern void isr32();
 extern void isr_ignore();
 extern void isr13();
+extern void isr33();
 
 volatile int watchdog_counter = 0;
 const int WATCHDOG_LIMIT = 5000; 
+volatile unsigned char key_queue[KEY_QUEUE_SIZE] = {0};
+volatile int key_queue_head = 0;
+volatile int key_queue_tail = 0;
+volatile uint32_t system_ticks = 0; 
+
 
 void int_to_hex(uint32_t n, char *str) {
     char hex_chars[] = "0123456789ABCDEF";
@@ -86,13 +92,23 @@ void draw_bsod(const char* error_name, struct registers *r) {
 
 void isr_handler(struct registers *r) { 
     if (r->int_no == 32) {
+        system_ticks++;
         port_byte_out(0x20, 0x20);
         return;
-    } 
+    }
+    if (r->int_no == 33) {
+        unsigned char scancode = port_byte_in(0x60);
+        int next = (key_queue_tail + 1) % KEY_QUEUE_SIZE;
+        if (next != key_queue_head) {
+            key_queue[key_queue_tail] = scancode;
+            key_queue_tail = next;
+        }
+        port_byte_out(0x20, 0x20);
+        return;
+    }
     if (r->int_no == 255) {
-        if (r->int_no >= 32) port_byte_out(0x20, 0x20);
-        return; 
-    } 
+        return;
+    }
     char* err_desc;
     switch (r->int_no) {
         case 0:  err_desc = "DIVIDE BY ZERO"; break;
@@ -100,7 +116,6 @@ void isr_handler(struct registers *r) {
         case 14: err_desc = "PAGE FAULT"; break;
         default: err_desc = "UNKNOWN EXCEPTION"; break;
     }
-
     draw_bsod(err_desc, r);
     __asm__ volatile("cli; hlt");
 }
@@ -124,7 +139,7 @@ void idt_init() {
     port_byte_out(0xA1, 0x02);
     port_byte_out(0x21, 0x01);
     port_byte_out(0xA1, 0x01);
-    port_byte_out(0x21, 0xFE); 
+    port_byte_out(0x21, 0xFC);
     port_byte_out(0xA1, 0xFF);
 
     memset(&idt, 0, sizeof(struct idt_entry) * 256);
@@ -136,9 +151,24 @@ void idt_init() {
     idt_set_gate(0, (unsigned int)isr0, 0x08, 0x8E);
     idt_set_gate(13, (unsigned int)isr13, 0x08, 0x8E); 
     idt_set_gate(32, (unsigned int)isr32, 0x08, 0x8E);
+    idt_set_gate(33, (unsigned int)isr33, 0x08, 0x8E);
 
     idt_load((unsigned int)&idtp);
     init_timer(100);
+    __asm__ volatile("sti");
+}
+
+void pic_init() {
+    port_byte_out(0x20, 0x11);
+    port_byte_out(0xA0, 0x11);
+    port_byte_out(0x21, 0x20);
+    port_byte_out(0xA1, 0x28);
+    port_byte_out(0x21, 0x04);
+    port_byte_out(0xA1, 0x02);
+    port_byte_out(0x21, 0x01);
+    port_byte_out(0xA1, 0x01);
+    port_byte_out(0x21, 0xFC);
+    port_byte_out(0xA1, 0xFF);
 }
 
 void watchdog_reset() {

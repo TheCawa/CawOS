@@ -10,10 +10,8 @@ void disable_cursor();
 void enable_cursor(unsigned char cursor_start, unsigned char cursor_end);
 void update_cursor(int row, int col);
 void draw_logo();
-void play_sound(unsigned int nFrequence);
-void nosound();
-void beep();
 void scroll();
 void print_line_scroll(const char* msg, int col, int* row, unsigned char color);
+void print_char_at(char c, int row, int col, unsigned char color);
 
 #endif

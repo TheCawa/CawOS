@@ -7,10 +7,10 @@
 #endif
 
 void cmd_dice(char* args, int* row) {
-    int roll = (rand() % 6) + 1;
+    int roll = rand(1, 6);
     char buf[16];
-    strcpy(buf, "You rolled: ");
     char num[4];
+    strcpy(buf, "You rolled: ");
     num[0] = roll + '0';
     num[1] = '\0';
     strcat(buf, num);

@@ -53,6 +53,7 @@ for %%a in (src/bin/*.c) do (
 :: 7. Загрузчик
 for %%I in (build\kernel.bin) do set "K_SIZE=%%~zI"
 set /a K_SECTORS=(%K_SIZE% / 512) + 1
+echo Kernel: %K_SIZE% bytes, %K_SECTORS% sectors
 nasm src/boot/boot.asm -f bin -dKERNEL_SECTORS=%K_SECTORS% -o build/boot.bin || goto error
 
 :: 8. Склейка

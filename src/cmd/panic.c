@@ -3,9 +3,9 @@
 #include "screen.h"
 
 void cmd_panic(char* args, int* row) {
-    print_at_color("Initiating system crash...", *row, 0, 0x0E); // Желтый текст
+    print_at_color("Initiating system crash...", *row, 0, 0x0E);
     (*row)++;
-    for(volatile int i = 0; i < 10000000; i++); 
+    sleep_ms(20);
     volatile int a = 10;
     volatile int b = 0;
     volatile int c = a / b;
