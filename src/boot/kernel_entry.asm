@@ -4,7 +4,6 @@ global _start
 global bios_write_sector
 global bios_read_sector
 global thunk_init
-global bios_get_mem
 global fpu_init
 
 section .text
@@ -40,13 +39,6 @@ bios_read_sector:
     mov ebp, esp
     mov byte [operation_type], 0x42
     jmp common_bios_io
-
-bios_get_mem:
-    push ebp
-    mov ebp, esp
-    mov byte [operation_type], 0x15
-    jmp common_bios_io
-
 
 fpu_init:
     mov eax, cr0
@@ -141,6 +133,23 @@ rm_real_start:
     mov word [bx], 0x3FF
     mov dword [bx + 2], 0
     lidt [bx]
+    mov al, 0x11        ; ICW1
+    out 0x20, al
+    out 0xA0, al
+    mov al, 0x08        ; ICW2
+    out 0x21, al
+    mov al, 0x70        ; ICW2
+    out 0xA1, al
+    mov al, 0x04        ; ICW3
+    out 0x21, al
+    mov al, 0x02
+    out 0xA1, al
+    mov al, 0x01        ; ICW4
+    out 0x21, al
+    out 0xA1, al
+    mov al, 0x00
+    out 0x21, al
+    out 0xA1, al
     sti
     mov al, [0x9A10]
     cmp al, 0x15
@@ -238,7 +247,6 @@ pm32_return:
     lidt [saved_idtr]
     popad
     pop ebp
-    sti
     ret
 
 

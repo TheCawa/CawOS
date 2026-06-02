@@ -1,6 +1,6 @@
 #include "commands.h"
 #include "fs.h"
-#include "screen.h"
+#include "drivers/screen.h"
 
 void cmd_ls(char* args, int* row) {
     (void)args;

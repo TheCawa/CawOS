@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./build.bat:*)",
+      "Bash(ls -la C:/CawOS_real/src/cmd/*.c)",
+      "Bash(i686-elf-readelf -h C:/CawOS_real/build/apps/fileview.bin)",
+      "Bash(ls -lh C:/CawOS_real/build/apps/*.bin)",
+      "Bash(i686-elf-readelf -h C:/CawOS_real/build/apps/fileview.elf)",
+      "Bash(i686-elf-readelf -l C:/CawOS_real/build/apps/fileview.elf)",
+      "Bash(./start.bat)",
+      "Bash(i686-elf-readelf -h C:/CawOS_real/src/bin/fileview.elf)",
+      "Bash(i686-elf-readelf -l C:/CawOS_real/src/bin/*.elf)",
+      "Bash(readelf -l src/bin/guess_game.elf)",
+      "Bash(readelf -h src/bin/guess_game.elf)",
+      "Bash(grep -n \"run_program_asm\" src/cpu/*.asm src/kernel/*.asm)",
+      "Bash(find . -name \"kernel.bin\" -exec ls -lh {} \\\\;)",
+      "Bash(i686-elf-size kernel.bin)",
+      "Bash(size kernel.bin)",
+      "Bash(i686-elf-nm build/kernel.elf)",
+      "Bash(mkdir:*)",
+      "Bash(mv mouse.h gui.h desktop.h gui/)",
+      "Bash(mv screen.h io.h audio.h ac97.h ata.h pci.h rtc.h drivers/)",
+      "Bash(mv idt.h interrupt.h memory.h elf.h syscall.h kernel/)",
+      "Bash(mv util.h font.h keyboard_map.h keyboard.h libc/)",
+      "Bash(bash update_includes.sh)"
+    ]
+  }
+}

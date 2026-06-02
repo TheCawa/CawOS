@@ -1,6 +1,6 @@
 #include "commands.h"
 #include "fs.h"
-#include "screen.h"
+#include "drivers/screen.h"
 
 void cmd_cd(char* args, int* row) {
     if (args == 0 || args[0] == '\0') {

@@ -1,6 +1,7 @@
 #include "commands.h"
-#include "util.h"
-#include "screen.h"
+#include "libc/util.h"
+#include "drivers/screen.h"
+#include "kernel/interrupt.h"
 #ifndef NULL
 #define NULL ((void*)0)
 #endif
@@ -10,9 +11,9 @@ extern command_t __stop_cmd;
 
 void execute_command(char* input, int* row) {
     if (input[0] == '\0') return;
-
+    clear_interrupt();
     command_t* cmd;
-    for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
+    for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) { 
         int name_len = strlen(cmd->name);    
         if (cmd->has_args) {
             if (strncasecmp(input, cmd->name, name_len) == 0 && 

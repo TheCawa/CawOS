@@ -1,7 +1,9 @@
-#include "util.h"
-#include "io.h"
-#include "idt.h"
+#include "libc/util.h"
+#include "drivers/io.h"
+#include "kernel/idt.h"
+#include "kernel/interrupt.h"
 
+volatile int g_interrupt_requested = 0;
 static unsigned int state = 0xACE1;
 extern unsigned int bios_get_mem();
 
@@ -42,15 +44,92 @@ void strcat(char* dest, const char* src) {
     dest[dest_len + i] = '\0';
 }
 
-void memset(void* dest, unsigned char val, int len) {
-    unsigned char* temp = (unsigned char*)dest;
-    for ( ; len != 0; len--) *temp++ = val;
+void request_interrupt() {
+    g_interrupt_requested = 1;
 }
 
+void clear_interrupt() {
+    g_interrupt_requested = 0;
+}
+
+int is_interrupt_requested() {
+    return g_interrupt_requested;
+}
+
+__attribute__((force_align_arg_pointer))
+void memset(void* dest, unsigned char val, int len) {
+    uint32_t dval = val | (val << 8) | (val << 16) | (val << 24);
+    unsigned char* d = (unsigned char*)dest;
+    while (len > 0 && ((uint32_t)d & 3)) { *d++ = val; len--; }
+    int dwords = len / 4;
+    __asm__ volatile(
+        "cld\n\t"
+        "rep stosl"
+        : "+D"(d), "+c"(dwords)
+        : "a"(dval)
+        : "memory"
+    );
+    len %= 4;
+    while (len--) *d++ = val;
+}
+
+__attribute__((force_align_arg_pointer))
+void memmove(void* dest, const void* src, int len) {
+    unsigned char* d = (unsigned char*)dest;
+    const unsigned char* s = (const unsigned char*)src;
+    if (d == s || len <= 0) return;
+    if (d < s || d >= s + len) {
+        while (len > 0 && ((uint32_t)d & 3)) { *d++ = *s++; len--; }
+        int dwords = len / 4;
+        __asm__ volatile(
+            "cld\n\t"
+            "rep movsl"
+            : "+D"(d), "+S"(s), "+c"(dwords)
+            :
+            : "memory"
+        );
+        len %= 4;
+        while (len--) *d++ = *s++;
+    } else {
+        d += len - 1;
+        s += len - 1;
+        __asm__ volatile(
+            "std\n\t"
+            "rep movsb\n\t"
+            "cld"
+            : "+D"(d), "+S"(s), "+c"(len)
+            :
+            : "memory"
+        );
+    }
+}
+
+__attribute__((force_align_arg_pointer))
 void memcpy(void* dest, const void* src, int len) {
-    const unsigned char* sp = (const unsigned char*)src;
-    unsigned char* dp = (unsigned char*)dest;
-    for (; len != 0; len--) *dp++ = *sp++;
+    unsigned char* d = (unsigned char*)dest;
+    const unsigned char* s = (const unsigned char*)src;
+    while (len > 0 && ((uint32_t)d & 3)) { *d++ = *s++; len--; }
+    int dwords = len / 4;
+    __asm__ volatile(
+        "cld\n\t"
+        "rep movsl"
+        : "+D"(d), "+S"(s), "+c"(dwords)
+        :
+        : "memory"
+    );
+    len %= 4;
+    while (len--) *d++ = *s++;
+}
+
+int memcmp(const void* s1, const void* s2, int n) {
+    const unsigned char* p1 = (const unsigned char*)s1;
+    const unsigned char* p2 = (const unsigned char*)s2;
+    for (int i = 0; i < n; i++) {
+        if (p1[i] != p2[i]) {
+            return p1[i] - p2[i];
+        }
+    }
+    return 0;
 }
 
 void get_cpu_info(char* out_str) {
@@ -76,11 +155,6 @@ void get_cpu_info(char* out_str) {
         ((unsigned int*)out_str)[2] = regs[2];
         out_str[12] = '\0';
     }
-}
-
-unsigned short get_total_memory() {
-    bios_get_mem();
-    return *(unsigned short*)0x9D04;
 }
 
 int strlen(const char* s) {
@@ -245,4 +319,15 @@ void sleep_ms(uint32_t ms) {
     while ((system_ticks - start_tick) < ticks_to_wait) {
         __asm__ volatile("hlt"); 
     }
+}
+
+char* strncpy(char* dest, const char* src, int n) {
+    int i;
+    for (i = 0; i < n && src[i] != '\0'; i++) {
+        dest[i] = src[i];
+    }
+    for (; i < n; i++) {
+        dest[i] = '\0';
+    }
+    return dest;
 }

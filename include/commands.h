@@ -8,6 +8,7 @@ typedef struct {
 } command_t;
 
 void execute_command(char* input, int* row);
+extern int g_last_command_row;
 
 #define REGISTER_COMMAND(c_name, func_ptr, args_flag) \
     __attribute__((section(".cmd"))) \

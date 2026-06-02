@@ -1,7 +1,7 @@
 #include "commands.h"
 #include "fs.h"
-#include "util.h"
-#include "screen.h"
+#include "libc/util.h"
+#include "drivers/screen.h"
 
 char* strchr(const char* s, int c); 
 

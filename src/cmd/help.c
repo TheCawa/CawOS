@@ -1,7 +1,7 @@
 #include "commands.h"
-#include "screen.h"
-#include "util.h"
-#include "idt.h"
+#include "drivers/screen.h"
+#include "libc/util.h"
+#include "kernel/idt.h"
 
 #ifndef NULL
 #define NULL ((void*)0)
@@ -36,7 +36,8 @@ void cmd_help(char* args, int* row) {
     command_t* cmd;
     for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
         if (current_idx >= skip && shown < cmds_per_page) {
-            if (*row >= 24) { scroll(); (*row)--; }
+            extern int ROWS;
+            if (*row >= ROWS - 1) { scroll(); (*row)--; }
             print_at("> ", *row, 0);
             print_at((char*)cmd->name, *row, 2);
             (*row)++;

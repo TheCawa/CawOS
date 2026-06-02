@@ -1,6 +1,6 @@
-#include "ata.h"
-#include "io.h"
-#include "screen.h"
+#include "drivers/ata.h"
+#include "drivers/io.h"
+#include "drivers/screen.h"
 
 #define ATA_PRIMARY_IO      0x1F0
 #define ATA_SECONDARY_IO    0x170

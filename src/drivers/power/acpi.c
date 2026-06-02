@@ -1,6 +1,6 @@
 #include "acpi.h"
-#include "util.h"
-#include "io.h"
+#include "libc/util.h"
+#include "drivers/io.h"
 
 uint32_t g_acpiCpuCount = 0;
 uint8_t  g_acpiCpuIds[MAX_CPU_COUNT];

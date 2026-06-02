@@ -1,6 +1,6 @@
 #include "commands.h"
-#include "util.h"
-#include "screen.h"
+#include "libc/util.h"
+#include "drivers/screen.h"
 
 #ifndef NULL
 #define NULL ((void*)0)

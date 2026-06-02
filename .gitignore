@@ -1,9 +1,5 @@
 
 build/
-*.o
-*.bin
-*.elf
-*.iso
-os-image.bin
+CawOS.img
 qemu_vga.log
 extracted/

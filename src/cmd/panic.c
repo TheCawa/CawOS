@@ -1,6 +1,6 @@
 #include "commands.h"
-#include "util.h"
-#include "screen.h"
+#include "libc/util.h"
+#include "drivers/screen.h"
 
 void cmd_panic(char* args, int* row) {
     print_at_color("Initiating system crash...", *row, 0, 0x0E);

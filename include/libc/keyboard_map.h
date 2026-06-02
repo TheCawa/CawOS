@@ -7,8 +7,14 @@
 #define LSHIFT 0x2A
 #define RSHIFT 0x36
 #define CAPSLOCK 0x3A
+#define LWIN 0x5B
+#define RWIN 0x5C
+#define ARROW_UP 0x48
+#define ARROW_DOWN 0x50
+#define ARROW_LEFT 0x4B
+#define ARROW_RIGHT 0x4D
 
-const char ascii_map[128] = {
+static const char ascii_map[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8',    '9', '0', '-', '=', BACKSPACE, '\t',
     'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',   '[', ']', ENTER, 0,
     'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';',   '\'', '`', 0, '\\', 'z', 'x', 'c', 'v', 'b', 'n',
@@ -16,7 +22,7 @@ const char ascii_map[128] = {
     0, 0, 0, '-', 0, 0, 0, '+', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-const char shift_map[128] = {
+static const char shift_map[128] = {
     0,  27, '!', '@', '#', '$', '%', '^', '&', '*',    '(', ')', '_', '+', BACKSPACE, '\t',
     'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P',   '{', '}', ENTER, 0,
     'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':',   '"', '~', 0, '|', 'Z', 'X', 'C', 'V', 'B', 'N',

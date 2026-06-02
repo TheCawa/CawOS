@@ -1,8 +1,8 @@
 #include "commands.h"
 #include "acpi.h"
-#include "screen.h"
-#include "util.h"
-#include "io.h"
+#include "drivers/screen.h"
+#include "libc/util.h"
+#include "drivers/io.h"
 
 void cmd_shutdown(char* args, int* row) {
     clear_screen();

@@ -1,6 +1,6 @@
 #include "commands.h"
-#include "util.h"
-#include "screen.h"
+#include "libc/util.h"
+#include "drivers/screen.h"
 
 static float f_stack[16];
 static int f_sp = 0;

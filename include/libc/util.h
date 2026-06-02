@@ -4,19 +4,24 @@
 #include <stdint.h>
 
 int strcmp(const char* s1, const char* s2);
+char* strncpy(char* dest, const char* src, int n);
 int strncmp(const char* s1, const char* s2, int n);
 int strlen(const char* s);
+char* strchr(const char* s, int c);
 int strcasecmp(const char* s1, const char* s2);
 int strncasecmp(const char* s1, const char* s2, int n);
 
 void strcpy(char* dest, const char* src);
 void strcat(char* dest, const char* src);
 void memset(void* dest, unsigned char val, int len);
+void memmove(void* dest, const void* src, int len);
 void memcpy(void* dest, const void* src, int len);
+int memcmp(const void* s1, const void* s2, int n);
 
 void get_cpu_info(char* buffer);
 unsigned short get_total_memory();
 void itoa(int n, char str[]);
+void itoa_hex(uint32_t n, char* str);
 int atoi(const char* s);
 void ftoa(float n, char* res, int precision);
 float atof(char* s);

@@ -24,16 +24,16 @@ void watchdog_check();
 void watchdog_reset();
 extern volatile int watchdog_counter;
 void idt_reload();
-#define KEY_QUEUE_SIZE 16
+#define KEY_QUEUE_SIZE 256
 extern volatile unsigned char key_queue[KEY_QUEUE_SIZE];
 extern volatile int key_queue_head;
 extern volatile int key_queue_tail;
 extern volatile uint32_t system_ticks;
 
 struct registers {
-    unsigned int ds;                  
+    unsigned int ds;
     unsigned int edi, esi, ebp, kernel_esp, ebx, edx, ecx, eax;
-    unsigned int int_no, err_code;    
-    unsigned int eip, cs, eflags, useresp, ss; 
-};
+    unsigned int int_no, err_code;
+    unsigned int eip, cs, eflags, useresp, ss;
+} __attribute__((packed));
 #endif

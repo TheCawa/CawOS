@@ -1,0 +1,11 @@
+#ifndef FS_CONFIG_H
+#define FS_CONFIG_H
+
+#define MAX_FILES 1024
+#define MAX_CLUSTERS 32768
+#define FS_TABLE_LBA 762
+#define FS_TABLE_SECTORS 152
+#define CAWFAT_SECTORS 128
+#define DATA_REGION_START 1042
+
+#endif

@@ -1,7 +1,7 @@
 #include "commands.h"
 #include "fs.h"
-#include "util.h"
-#include "screen.h"
+#include "libc/util.h"
+#include "drivers/screen.h"
 
 void cmd_touch(char* args, int* row) {
     if (args == 0 || args[0] == '\0') {

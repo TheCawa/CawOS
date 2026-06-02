@@ -1,8 +1,8 @@
 #include "commands.h"
 #include "fs.h"
-#include "util.h"
-#include "screen.h"
-#include "idt.h"
+#include "libc/util.h"
+#include "drivers/screen.h"
+#include "kernel/idt.h"
 
 extern volatile unsigned char key_queue[]; 
 extern volatile int key_queue_head;

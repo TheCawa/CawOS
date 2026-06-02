@@ -1,5 +1,5 @@
 #include "commands.h"
-#include "screen.h"
+#include "drivers/screen.h"
 
 void cmd_clear(char* args, int* row) {
     clear_screen();
