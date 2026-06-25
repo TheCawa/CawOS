@@ -36,11 +36,12 @@ void cmd_help(char* args, int* row) {
     command_t* cmd;
     for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
         if (current_idx >= skip && shown < cmds_per_page) {
-            extern int ROWS;
-            if (*row >= ROWS - 1) { scroll(); (*row)--; }
-            print_at("> ", *row, 0);
-            print_at((char*)cmd->name, *row, 2);
-            (*row)++;
+            char cmd_line[64];
+            memset(cmd_line, 0, 64);
+            strcpy(cmd_line, "> ");
+            strcat(cmd_line, (char*)cmd->name);
+            print_line_scroll(cmd_line, 0, row, 0x0F);
+            
             shown++;
         }
         current_idx++;

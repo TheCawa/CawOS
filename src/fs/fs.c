@@ -9,8 +9,8 @@
 file_t fs[MAX_FILES];
 uint16_t cawfat[MAX_CLUSTERS];
 char current_dir[32];
+int fs_use_ata = 0;
 static uint8_t* fs_io_buf = NULL;
-static int fs_use_ata = 0;
 extern void thunk_init(uint8_t drive);
 
 static void fs_write_sector(uint32_t lba, uint8_t* buf) {

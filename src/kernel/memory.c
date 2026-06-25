@@ -1,7 +1,7 @@
 #include "kernel/memory.h"
 #include "libc/util.h"
 #include "drivers/screen.h"
-#define HEAP_START 0x03000000  
+#define HEAP_START 0x00800000
 
 typedef struct block {
     size_t size;

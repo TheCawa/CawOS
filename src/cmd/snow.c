@@ -3,9 +3,11 @@
 #include "drivers/screen.h"
 #include "libc/util.h"
 #include "kernel/interrupt.h"
+#include "libc/keyboard_map.h"
+#include "kernel/idt.h"
 
-#define MAX_COLS 80
-#define MAX_ROWS 25
+#define MAX_COLS 256
+#define MAX_ROWS 128
 
 typedef struct {
     unsigned char flake;
@@ -32,7 +34,7 @@ typedef struct {
     int active;
 } snowflake_t;
 
-#define MAX_FLAKES 80
+#define MAX_FLAKES 100
 static snowflake_t flakes[MAX_FLAKES];
 static snow_scheme_t current_scheme;
 
@@ -128,6 +130,13 @@ void cmd_snow(char* args, int* row) {
     init_snow(scheme);
     while (!is_interrupt_requested()) {
         render_frame_snow();
+        if (key_queue_head != key_queue_tail) {
+            unsigned char scancode = key_queue[key_queue_head];
+            if (!(scancode & 0x80) && scancode == ESC) {
+                break;
+            }
+            key_queue_head = (key_queue_head + 1) % KEY_QUEUE_SIZE;
+        }
         sleep_ms(40);
     }
     clear_interrupt();

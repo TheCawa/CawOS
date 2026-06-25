@@ -20,7 +20,13 @@ void cmd_heap(char* args, int* row) {
     itoa(stats.used_size / 1024, num);
     strcat(line, num);
     strcat(line, " KB (");
-    itoa((stats.used_size * 100) / stats.total_size, num);
+    if (stats.total_size > 0) {
+        uint32_t used_kb = stats.used_size / 1024;
+        uint32_t total_kb = stats.total_size / 1024;
+        itoa((used_kb * 100) / total_kb, num);
+    } else {
+        strcpy(num, "0");
+    }
     strcat(line, num);
     strcat(line, "%)");
     print_line_scroll(line, 0, row, 0x0E);
@@ -28,7 +34,13 @@ void cmd_heap(char* args, int* row) {
     itoa(stats.free_size / 1024, num);
     strcat(line, num);
     strcat(line, " KB (");
-    itoa((stats.free_size * 100) / stats.total_size, num);
+    if (stats.total_size > 0) {
+        uint32_t free_kb = stats.free_size / 1024;
+        uint32_t total_kb = stats.total_size / 1024;
+        itoa((free_kb * 100) / total_kb, num);
+    } else {
+        strcpy(num, "0");
+    }
     strcat(line, num);
     strcat(line, "%)");
     print_line_scroll(line, 0, row, 0x0A);

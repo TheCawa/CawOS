@@ -14,6 +14,16 @@
 #define CHAR_GAP_Y 2
 extern unsigned char font8x8_basic[128][8];
 
+__attribute__((always_inline)) static inline uint8_t inb(uint16_t port) {
+    uint8_t result;
+    __asm__ volatile("inb %1, %0" : "=a"(result) : "Nd"(port));
+    return result;
+}
+
+__attribute__((always_inline)) static inline void outb(uint16_t port, uint8_t data) {
+    __asm__ volatile("outb %0, %1" : : "a"(data), "Nd"(port));
+}
+
 __attribute__((always_inline)) static inline void putpixel_local(
     uint8_t* fb, unsigned int width, unsigned int height, 
     unsigned int pitch, unsigned int bpp, 
@@ -117,11 +127,11 @@ void _start() {
     print_str_local(fb, width, height, pitch, bpp, "System diagnostics and rescue environment", 3, 5, fg_color, bg_color);
     print_str_local(fb, width, height, pitch, bpp, "Running hardware integrity checks...", 6, 5, fg_color, bg_color);
     for (volatile int d = 0; d < 30000000; d++);
-    print_str_local(fb, width, height, pitch, bpp, "Testing RAM (0x500000 - 0x900000): Testing...", 8, 5, fg_color, bg_color);
+    print_str_local(fb, width, height, pitch, bpp, "Testing RAM (0x500000 - 0xB00000): Testing...", 8, 5, fg_color, bg_color);
     for (volatile int d = 0; d < 50000000; d++);
     int mem_ok = 1;
     volatile unsigned int* mem_start = (volatile unsigned int*)0x500000;
-    unsigned int total_words = (4 * 1024 * 1024) / 4; 
+    unsigned int total_words = (6 * 1024 * 1024) / 4; 
     for (unsigned int i = 0; i < total_words; i++) mem_start[i] = 0x55555555;
     for (unsigned int i = 0; i < total_words; i++) {
         if (mem_start[i] != 0x55555555) { mem_ok = 0; break; }
@@ -139,6 +149,24 @@ void _start() {
         print_str_local(fb, width, height, pitch, bpp, "[FAIL]", 8, 40, 0x00FF0000, bg_color); 
     }
     print_str_local(fb, width, height, pitch, bpp, "Diagnostics completed.", 11, 5, fg_color, bg_color);
-    print_str_local(fb, width, height, pitch, bpp, "Please restart your computer.", 13, 5, 0x0000FFFF, bg_color);
-    while(1);
+    print_str_local(fb, width, height, pitch, bpp, "Press 'R' key to restart your computer.", 13, 5, 0x0000FFFF, bg_color);
+    for (int i = 0; i < 10; i++) {
+        if ((inb(0x64) & 1) == 0) break;
+        (void)inb(0x60);
+    }
+    while(1) {
+        if (inb(0x64) & 1) {
+            uint8_t scancode = inb(0x60);
+            if (scancode == 0x13) {
+                outb(0x64, 0xFE);
+                uint8_t r92 = inb(0x92);
+                if (!(r92 & 1)) {
+                    outb(0x92, r92 | 1);
+                }
+                volatile uint16_t idt_stub[3] = {0, 0, 0};
+                __asm__ volatile("lidt (%0); int $3" : : "r"(idt_stub));
+            }
+        }
+        inb(0x80); 
+    }
 }

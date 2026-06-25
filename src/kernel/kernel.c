@@ -26,8 +26,10 @@ int ROWS;
 int g_last_command_row = -1;
 
 void main() {
+    heap_init();
     logger_init();
-    LOG_INFO("SYS", "CawOS v0.3.0 Bootstrap started");
+    LOG_INFO("SYS", "CawOS v0.3.1 Bootstrap started");
+    LOG_INFO("MEM", "Heap initialized");
     uint32_t vbe_fb     = *((volatile uint32_t*)0x0520);
     uint32_t vbe_pitch  = *((volatile uint32_t*)0x0524);
     uint32_t vbe_width  = *((volatile uint32_t*)0x0528);
@@ -48,14 +50,13 @@ void main() {
     acpi_init();
     LOG_INFO("CPU", "Enabling FPU...");
     fpu_init();
-    LOG_INFO("MEM", "Heap init...");
-    heap_init();
     LOG_INFO("VFS", "Mounting FS...");
     fs_init();
     LOG_INFO("PCI", "Scanning bus 0...");
     pci_init();
     LOG_INFO("SYS", "Core init complete. Ready for shell.");
     logger_enable_screen(false);
+    screen_set_font_scale(3, 2, 7, 4);
     clear_screen();
     disable_cursor();
     draw_logo();
@@ -81,7 +82,7 @@ void main() {
     int buffer_idx = 0;
     int prompt_len = 0;
     static char key_buffer[1024];
-    print_line_scroll("CawOS v0.3.0", 0, &row, 0x0B);
+    print_line_scroll("CawOS v0.3.1", 0, &row, 0x0B);
     print_line_scroll("Type 'help' to see all commands.", 0, &row, 0x0F);
     row++; 
     enable_cursor(13, 15);
@@ -100,8 +101,10 @@ void main() {
 
     while(1) {
         watchdog_reset();
+        int current_max_rows = screen_get_rows();
+        int current_max_cols = screen_get_cols();
         update_cursor(row, col);
-        __asm__ volatile("hlt");
+        __asm__ volatile("hlt"); 
         if (key_queue_head != key_queue_tail) {
             unsigned char scancode = key_queue[key_queue_head];
             key_queue_head = (key_queue_head + 1) % KEY_QUEUE_SIZE;
@@ -118,7 +121,7 @@ void main() {
                 } else if (scancode == 0x48) { 
                     if (history_count > 0 && history_idx < history_count - 1) {
                         history_idx++;
-                        for(int k = prompt_len; k < COLS; k++) print_char_at(' ', row, k, 0x0F);
+                        for(int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', row, k, 0x0F);
                         strcpy(key_buffer, cmd_history[history_count - 1 - history_idx]);
                         buffer_idx = strlen(key_buffer);
                         print_at_color(key_buffer, row, prompt_len, 0x0F);
@@ -128,7 +131,7 @@ void main() {
                 } else if (scancode == 0x50) {
                     if (history_idx >= 0) {
                         history_idx--;
-                        for(int k = prompt_len; k < COLS; k++) print_char_at(' ', row, k, 0x0F);
+                        for(int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', row, k, 0x0F);
                         if (history_idx == -1) {
                             memset(key_buffer, 0, 1024);
                             buffer_idx = 0;
@@ -141,6 +144,8 @@ void main() {
                         }
                         update_cursor(row, col);
                     }
+                } else if (scancode == ESC) {
+                    continue; 
                 } else if (scancode == ENTER) {
                     key_buffer[buffer_idx] = '\0';
                     disable_cursor();
@@ -164,16 +169,16 @@ void main() {
                     } else {
                         row++;
                     }
-                    if (row >= ROWS) {
+                    while (row >= current_max_rows) {
                         scroll();
-                        row = ROWS - 1;
+                        row = current_max_rows - 1;
                     }
                     buffer_idx = 0;
                     memset(prompt, 0, 36);
                     strcpy(prompt, current_dir);
                     strcat(prompt, "> ");
-                    prompt_len = strlen(prompt);
-                    for (int c = 0; c < COLS; c++) print_char_at(' ', row, c, 0x0F);
+                    prompt_len = strlen(prompt); 
+                    for (int c = 0; c < current_max_cols; c++) print_char_at(' ', row, c, 0x0F);
                     print_at_color(prompt, row, 0, 0x0F);
                     col = prompt_len;
                     enable_cursor(13, 15);
@@ -205,7 +210,7 @@ void main() {
                         }
                     }
                     if (matches == 1 && match) {
-                        for(int k = prompt_len; k < COLS; k++) print_char_at(' ', row, k, 0x0F);
+                        for(int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', row, k, 0x0F);
                         int cmd_len = strlen(match->name);
                         memcpy(key_buffer, match->name, cmd_len);
                         buffer_idx = cmd_len;
@@ -229,10 +234,13 @@ void main() {
                         char str[2] = {key, 0};
                         print_at(str, row, col);
                         col++;
-                        if (col >= COLS) {
+                        if (col >= current_max_cols) {
                             col = 0;
                             row++; 
-                            if (row >= ROWS) row = ROWS - 1;
+                            while (row >= current_max_rows) {
+                                scroll();
+                                row = current_max_rows - 1;
+                            }
                         }
                         update_cursor(row, col);
                     }

@@ -9,7 +9,7 @@ static void about_draw_cb(window_t* win, int cx, int cy, int cw, int ch) {
     window_draw_line(win, 2, ch - 3, cw - 3, ch - 3, 0x0000E5FF);
     window_draw_text(win, "--- CawOS Microkernel OS ---", 15, 15, 0x0000E5FF, COLOR_TRANSPARENT);
     window_draw_text(win, "Kernel Version:", 15, 45, 0x00AAAAAA, COLOR_TRANSPARENT);
-    window_draw_text(win, "v0.3.0-alpha", 140, 45, 0x0000FF00, COLOR_TRANSPARENT);
+    window_draw_text(win, "v0.3.1", 140, 45, 0x0000FF00, COLOR_TRANSPARENT);
     window_draw_text(win, "Architecture:", 15, 65, 0x00AAAAAA, COLOR_TRANSPARENT);
     window_draw_text(win, "x86_32 Protected", 140, 65, 0x00FFFFFF, COLOR_TRANSPARENT);
     window_draw_text(win, "Environment:", 15, 85, 0x00AAAAAA, COLOR_TRANSPARENT);

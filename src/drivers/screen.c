@@ -2,20 +2,13 @@
 #include "drivers/io.h"
 #include "libc/util.h"
 #include "libc/font.h"
+#include "kernel/memory.h"
 
 #define VGA_MEMORY ((char*)0xb8000)
 #define SCREEN_WIDTH 80
 #define SCREEN_HEIGHT 25
-#define CHAR_W 12
-#define CHAR_H 14
-#define SCALE_X_NUM 3
-#define SCALE_X_DEN 2
-#define SCALE_Y_NUM 7
-#define SCALE_Y_DEN 4
-#define CHAR_GAP_Y (CHAR_H / 7)
 #define LOGO_OFFSET_X 6
 #define CURSOR_BLINK_MS 500
-#define SHADOW_BUFFER_ADDR 0x02000000
 
 uint8_t* g_framebuffer = 0;
 uint32_t g_width = 0, g_height = 0, g_pitch = 0;
@@ -28,6 +21,13 @@ static uint32_t last_cursor_tick = 0;
 int cursor_row = -1, cursor_col = -1;
 static int cursor_drawn = 0;
 uint8_t* g_shadow = 0;
+uint32_t g_char_w = 12;
+uint32_t g_char_h = 14;
+uint32_t g_scale_x_num = 3;
+uint32_t g_scale_x_den = 2;
+uint32_t g_scale_y_num = 7;
+uint32_t g_scale_y_den = 4;
+uint32_t g_char_gap_y = 2; // (14 / 7 = 2)
 
 unsigned char current_color = 0x0F;
 static const char spinner_chars[] = {'|', '/', '-', '\\'};
@@ -53,11 +53,15 @@ void screen_init_graphics(uint32_t framebuffer, uint32_t width, uint32_t height,
     g_pitch  = (pitch  > 0) ? pitch  : (g_width * 4);
     g_bpp = *((volatile uint32_t*)0x0530);
     if (g_bpp == 0) g_bpp = 32;
-    g_shadow = (uint8_t*)SHADOW_BUFFER_ADDR;
-    memset(g_shadow, 0, g_height * g_pitch);
+    size_t buffer_size = g_height * g_pitch;
+    g_shadow = (uint8_t*)malloc(buffer_size);
+    if (g_shadow == NULL) {
+        g_shadow = (uint8_t*)0x02000000;
+    }
+    memset(g_shadow, 0, buffer_size);
     g_is_graphics = 1;
-    g_cols = g_width  / CHAR_W;
-    g_rows = g_height / (CHAR_H + CHAR_GAP_Y);
+    g_cols = g_width  / g_char_w;
+    g_rows = g_height / (g_char_h + g_char_gap_y);
     cursor_visible = 1;
     cursor_drawn = 0;
     cursor_row = -1;
@@ -69,14 +73,14 @@ int screen_get_cols() { return g_cols; }
 int screen_get_rows() { return g_rows; }
 
 static void gfx_flush_char(int col, int row) {
-    int x = col * CHAR_W;
-    int y = row * (CHAR_H + CHAR_GAP_Y);
-    int h = CHAR_H + CHAR_GAP_Y;
+    int x = col * g_char_w;
+    int y = row * (g_char_h + g_char_gap_y);
+    int h = g_char_h + g_char_gap_y;
     for (int dy = 0; dy < h; dy++) {
         uint32_t offset = (y + dy) * g_pitch + x * (g_bpp / 8);
         volatile uint32_t* dst = (volatile uint32_t*)(g_framebuffer + offset);
         uint32_t* src = (uint32_t*)(g_shadow + offset);
-        int dwords = (CHAR_W * (g_bpp / 8)) / 4;
+        int dwords = (g_char_w * (g_bpp / 8)) / 4;
         for (int i = 0; i < dwords; i++) {
             dst[i] = src[i];
         }
@@ -103,14 +107,14 @@ void gfx_draw_char(char c, int x, int y, uint32_t fg, uint32_t bg) {
     unsigned char* font_row = font8x8_basic[(unsigned char)c];
     int dst_y = y;
     for (int dy = 0; dy < 8; dy++) {
-        int row_height = (dy % SCALE_Y_DEN < (SCALE_Y_NUM % SCALE_Y_DEN)) ? 
-                         (SCALE_Y_NUM / SCALE_Y_DEN + 1) : (SCALE_Y_NUM / SCALE_Y_DEN);
+        int row_height = (dy % g_scale_y_den < (g_scale_y_num % g_scale_y_den)) ? 
+                         (g_scale_y_num / g_scale_y_den + 1) : (g_scale_y_num / g_scale_y_den);
         if (row_height == 0) row_height = 1;
         int dst_x = x;
         for (int dx = 0; dx < 8; dx++) {
             uint32_t px_color = (font_row[dy] & (1 << (7 - dx))) ? fg : bg;
-            int col_width = (dx % SCALE_X_DEN < (SCALE_X_NUM % SCALE_X_DEN)) ? 
-                            (SCALE_X_NUM / SCALE_X_DEN + 1) : (SCALE_X_NUM / SCALE_X_DEN);
+            int col_width = (dx % g_scale_x_den < (g_scale_x_num % g_scale_x_den)) ? 
+                            (g_scale_x_num / g_scale_x_den + 1) : (g_scale_x_num / g_scale_x_den);
             if (col_width == 0) col_width = 1;
             for (int sy = 0; sy < row_height; sy++) {
                 for (int sx = 0; sx < col_width; sx++) {
@@ -149,7 +153,7 @@ void print_char_at(char c, int row, int col, unsigned char color) {
     if (g_is_graphics) {
         uint32_t fg = vga_to_rgb(color);
         uint32_t bg = vga_to_rgb(color >> 4);
-        gfx_draw_char(c, col*CHAR_W, row*(CHAR_H + CHAR_GAP_Y), fg, bg);
+        gfx_draw_char(c, col*g_char_w, row*(g_char_h + g_char_gap_y), fg, bg);
         gfx_flush_char(col, row);
     } else {
         if (row >= SCREEN_HEIGHT || col >= SCREEN_WIDTH) return;
@@ -180,12 +184,12 @@ void enable_cursor(unsigned char start, unsigned char end) {
 
 void gfx_toggle_cursor(int row, int col, int draw) {
     if (!g_is_graphics || !g_framebuffer) return;
-    int x = col * CHAR_W;
-    int y = row * (CHAR_H + CHAR_GAP_Y);
+    int x = col * g_char_w;
+    int y = row * (g_char_h + g_char_gap_y);
     int cursor_height = 2;
-    int cursor_y = y + CHAR_H + CHAR_GAP_Y - cursor_height;
+    int cursor_y = y + g_char_h + g_char_gap_y - cursor_height;
     for (int cy = 0; cy < cursor_height; cy++) {
-        for (int cx = 0; cx < CHAR_W; cx++) {
+        for (int cx = 0; cx < g_char_w; cx++) {
             int px = x + cx;
             int py = cursor_y + cy;
             if (px >= 0 && px < (int)g_width && py >= 0 && py < (int)g_height) {
@@ -225,9 +229,9 @@ void update_cursor(int row, int col) {
 void draw_logo() {
     clear_screen();
     int rows = screen_get_rows(); int cols = screen_get_cols();
-    const int LOGO_CHAR_WIDTH = 75; const int LOGO_CHAR_HEIGHT = 5;
-    int start_col = (cols - LOGO_CHAR_WIDTH) / 2 + LOGO_OFFSET_X;
-    int start_row = (rows - LOGO_CHAR_HEIGHT - 5) / 2;
+    const int LOGO_WIDTH = 75; const int LOGO_HEIGHT = 5;
+    int start_col = (cols - LOGO_WIDTH) / 2 + LOGO_OFFSET_X;
+    int start_row = (rows - LOGO_HEIGHT - 5) / 2;
     if (start_col < 2) start_col = 2; if (start_row < 2) start_row = 2;
     unsigned char color = 0x0B;
     print_at_color("  ______      ______      __     __      ______      ______   ", start_row,     start_col, color);
@@ -252,19 +256,17 @@ void scroll() {
 
     if (g_is_graphics) {
         if (cursor_drawn) { gfx_toggle_cursor(cursor_row, cursor_col, 0); cursor_drawn = 0; }
-        
-        uint32_t line_pixels  = CHAR_H + CHAR_GAP_Y;
+        uint32_t line_pixels  = g_char_h + g_char_gap_y;
         uint32_t bytes_per_line = g_pitch * line_pixels;
         uint32_t total_bytes    = g_height * g_pitch;
-        
         memmove(g_shadow, g_shadow + bytes_per_line, total_bytes - bytes_per_line);
         memset(g_shadow + (g_height - line_pixels) * g_pitch, 0, bytes_per_line);
-        
-        volatile uint32_t* fb = (volatile uint32_t*)g_framebuffer;
-        uint32_t* sh = (uint32_t*)g_shadow;
+        volatile uint32_t* dst = (volatile uint32_t*)g_framebuffer;
+        uint32_t* src = (uint32_t*)g_shadow;
         uint32_t total_dwords = total_bytes / 4;
+        
         for (uint32_t i = 0; i < total_dwords; i++) {
-            fb[i] = sh[i];
+            dst[i] = src[i];
         }
 
         if (cursor_row > 0) cursor_row--;
@@ -281,14 +283,43 @@ void scroll() {
 
 void print_line_scroll(const char* msg, int col, int* row, unsigned char color) {
     int max_rows = screen_get_rows();
-    if (*row >= max_rows) {
+    while (*row >= max_rows) {
         scroll();
         *row = max_rows - 1;
-        if (g_is_graphics) cursor_row = max_rows - 1;
     }
     if (*row < 0) *row = 0;
-    if (*row >= max_rows) *row = max_rows - 1;
     print_at_color(msg, *row, col, color);
-    if (g_is_graphics) cursor_col = col + strlen(msg);
+    if (g_is_graphics) {
+        cursor_row = *row;
+        cursor_col = col + strlen(msg);
+    }
     (*row)++;
+}
+
+void screen_set_font_scale(uint32_t scale_x_num, uint32_t scale_x_den, uint32_t scale_y_num, uint32_t scale_y_den) {
+    if (!g_is_graphics) return;
+    if (scale_x_den == 0 || scale_y_den == 0) return;
+    g_scale_x_num = scale_x_num;
+    g_scale_x_den = scale_x_den;
+    g_scale_y_num = scale_y_num;
+    g_scale_y_den = scale_y_den;
+    uint32_t new_w = 0;
+    for (int dx = 0; dx < 8; dx++) {
+        new_w += (dx % g_scale_x_den < (g_scale_x_num % g_scale_x_den)) ? 
+                 (g_scale_x_num / g_scale_x_den + 1) : (g_scale_x_num / g_scale_x_den);
+    }
+    g_char_w = (new_w > 0) ? new_w : 8;
+    uint32_t new_h = 0;
+    for (int dy = 0; dy < 8; dy++) {
+        new_h += (dy % g_scale_y_den < (g_scale_y_num % g_scale_y_den)) ? 
+                 (g_scale_y_num / g_scale_y_den + 1) : (g_scale_y_num / g_scale_y_den);
+    }
+    g_char_h = (new_h > 0) ? new_h : 8;
+    g_char_gap_y = g_char_h / 7;
+    if (g_char_gap_y == 0) g_char_gap_y = 1;
+    g_cols = g_width  / g_char_w;
+    g_rows = g_height / (g_char_h + g_char_gap_y);
+    cursor_row = 0;
+    cursor_col = 0;
+    clear_screen();
 }

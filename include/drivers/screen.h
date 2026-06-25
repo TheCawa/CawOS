@@ -20,6 +20,7 @@ typedef enum {
 } video_mode_t;
 
 void screen_init_graphics(uint32_t framebuffer, uint32_t width, uint32_t height, uint32_t pitch);
+void screen_set_font_scale(uint32_t scale_x_num, uint32_t scale_x_den, uint32_t scale_y_num, uint32_t scale_y_den);
 void set_video_mode(video_mode_t mode);
 void clear_screen();
 void gfx_toggle_cursor(int row, int col, int draw);

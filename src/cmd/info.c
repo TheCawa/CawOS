@@ -7,14 +7,15 @@ extern uint32_t g_width, g_height, g_pitch, g_bpp;
 extern uint32_t g_cols, g_rows;
 extern void get_cpu_info(char* v);
 extern unsigned short get_total_memory();
+extern int fs_use_ata;
 
 void cmd_info(char* args, int* row) {
     char cpu_model[48];
     char mem_str[16];
     get_cpu_info(cpu_model);
-    int mem_mb = get_total_memory() + 1;
+    int mem_mb = get_total_memory();
     itoa(mem_mb, mem_str);
-    print_line_scroll("CawOS v0.3.0", 0, row, 0x0B);
+    print_line_scroll("CawOS v0.3.1", 0, row, 0x0B);
     char cpu_line[64];
     memset(cpu_line, 0, 64);
     strcpy(cpu_line, "CPU: ");
@@ -26,6 +27,15 @@ void cmd_info(char* args, int* row) {
     strcat(ram_line, mem_str);
     strcat(ram_line, " MB");
     print_line_scroll(ram_line, 0, row, 0x0F);
+    char storage_line[48];
+    memset(storage_line, 0, 48);
+    strcpy(storage_line, "Storage: ");
+    if (fs_use_ata) {
+        strcat(storage_line, "ATA Driver (PIO Mode)");
+    } else {
+        strcat(storage_line, "BIOS Thunk (INT 13h)");
+    }
+    print_line_scroll(storage_line, 0, row, 0x0F);
     char display_line[64];
     memset(display_line, 0, 64);
     strcpy(display_line, "Display: ");

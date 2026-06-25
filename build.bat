@@ -27,7 +27,7 @@ for /r src %%f in (*.c) do (
             set "rel_dir=!file_dir:%cd%\src\=!"
             set "obj_dir=build\!rel_dir!"
             if not exist "!obj_dir!" mkdir "!obj_dir!"
-            i686-elf-gcc -ffreestanding -fno-pie -fno-stack-protector -m32 -Iinclude -Wall -O2 -Wno-array-bounds -c "%%f" -o "!obj_dir!%%~nf.o" || goto error
+            i686-elf-gcc -march=i486 -ffreestanding -fno-pie -fno-stack-protector -m32 -Iinclude -Wall -O2 -Wno-array-bounds -c "%%f" -o "!obj_dir!%%~nf.o" || goto error
         )
     )
 )
@@ -38,7 +38,7 @@ if not exist src\recovery\recovery.c (
     echo [ERROR] src/recovery/recovery.c not found!
     goto error
 )
-i686-elf-gcc -ffreestanding -fno-pie -fno-stack-protector -m32 -Iinclude -Wall -O2 -Wno-array-bounds -c "src/recovery/recovery.c" -o "build/recovery/recovery.o" || goto error
+i686-elf-gcc -march=i486 -ffreestanding -fno-pie -fno-stack-protector -m32 -Iinclude -Wall -O2 -Wno-array-bounds -c "src/recovery/recovery.c" -o "build/recovery/recovery.o" || goto error
 set "FONT_OBJ="
 for /r build %%g in (font.o) do (
     if exist "%%g" set "FONT_OBJ=%%g"

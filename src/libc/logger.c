@@ -92,6 +92,7 @@ static int log_vsnprintf(char* buf, int size, const char* fmt, va_list args) {
 }
 
 void logger_init(void) {
+    screen_set_font_scale(1, 1, 1, 1);
     memset(log_buffer, 0, sizeof(log_buffer));
     log_write_idx = 0;
     log_count = 0;
