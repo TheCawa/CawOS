@@ -3,3 +3,4 @@ build/
 CawOS.img
 qemu_vga.log
 extracted/
+.ini
