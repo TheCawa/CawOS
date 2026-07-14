@@ -15,7 +15,7 @@ echo [ASM] Compiling low-level objects...
 nasm src/boot/kernel_entry.asm -f elf32 -o build/kernel_entry.o || goto error
 nasm src/cpu/interrupt.asm -f elf32 -o build/interrupt.o || goto error
 
-:: 2. C (Компилируем основное ядро с сохранением структуры каталогов)
+:: 2. C
 echo [C] Compiling kernel modules...
 for /r src %%f in (*.c) do (
     echo %%f | findstr /I "\\bin\\" >nul
@@ -48,7 +48,7 @@ echo Using font object: !FONT_OBJ!
 i686-elf-ld -m elf_i386 -T scripts/linker.ld -nostdlib build/recovery/recovery.o "!FONT_OBJ!" -o build/recovery/recovery.elf || goto error
 i686-elf-objcopy -O binary build/recovery/recovery.elf build/recovery.bin || goto error
 
-:: 3. Сбор списка объектников ядра (Рекурсивно обходим все подпапки build)
+:: 3. Сбор списка объектников ядра
 set "CORE_OBJS=build/kernel_entry.o build/interrupt.o"
 for /r build %%i in (*.o) do (
     set "obj_name=%%~nxi"

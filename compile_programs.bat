@@ -2,15 +2,15 @@
 echo Compiling user programs...
 
 echo Compiling fileview.elf...
-i686-elf-gcc -nostdlib -nostartfiles -N -static -I. -Ttext=0x1000000 -o ../src/bin/elf/fileview.elf fileview.c
+i686-elf-gcc -nostdlib -nostartfiles -Iinclude -N -static -I. -Ttext=0x1000000 -o src/bin/elf/fileview.elf src/elf/fileview.c
 if errorlevel 1 goto error
 
 echo Compiling keytest.elf...
-i686-elf-gcc -nostdlib -nostartfiles -N -static -I. -Ttext=0x1000000 -o ../src/bin/elf/keytest.elf keytest.c
+i686-elf-gcc -nostdlib -nostartfiles -Iinclude -N -static -I. -Ttext=0x1000000 -o src/bin/elf/keytest.elf src/elf/keytest.c
 if errorlevel 1 goto error
 
 echo Compiling guess_game.elf...
-i686-elf-gcc -nostdlib -nostartfiles -N -static -I. -Ttext=0x1000000 -o ../src/bin/elf/guess_game.elf guess_game.c
+i686-elf-gcc -nostdlib -nostartfiles -Iinclude -N -static -I. -Ttext=0x1000000 -o src/bin/elf/guess_game.elf src/elf/guess_game.c
 if errorlevel 1 goto error
 
 echo.
