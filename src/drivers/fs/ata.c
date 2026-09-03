@@ -65,8 +65,8 @@ void ata_init() {
 }
 
 ata_status_t ata_read_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, uint8_t* buffer) {
-    if (count == 0) return ATA_OK;
-    
+    uint16_t sectors = (count == 0) ? 256 : count;
+
     uint16_t io_base = (dev_id < 2) ? ATA_PRIMARY_IO : ATA_SECONDARY_IO;
     uint16_t ctrl_base = ata_get_ctrl_base(io_base);
 
@@ -80,7 +80,7 @@ ata_status_t ata_read_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, uint8
 
     port_byte_out(io_base + ATA_REG_COMMAND, ATA_CMD_READ_PIO);
 
-    for (int s = 0; s < count; s++) {
+    for (int s = 0; s < sectors; s++) {
         uint32_t timeout = 100000;
         while (timeout--) {
             uint8_t status = port_byte_in(ctrl_base + ATA_REG_ALTSTATUS);
@@ -99,7 +99,7 @@ ata_status_t ata_read_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, uint8
 }
 
 ata_status_t ata_write_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, const uint8_t* buffer) {
-    if (count == 0) return ATA_OK;
+    uint16_t sectors = (count == 0) ? 256 : count;
 
     uint16_t io_base = (dev_id < 2) ? ATA_PRIMARY_IO : ATA_SECONDARY_IO;
     uint16_t ctrl_base = ata_get_ctrl_base(io_base);
@@ -114,7 +114,7 @@ ata_status_t ata_write_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, cons
 
     port_byte_out(io_base + ATA_REG_COMMAND, ATA_CMD_WRITE_PIO);
 
-    for (int s = 0; s < count; s++) {
+    for (int s = 0; s < sectors; s++) {
         uint32_t timeout = 100000;
         while (timeout--) {
             uint8_t status = port_byte_in(ctrl_base + ATA_REG_ALTSTATUS);

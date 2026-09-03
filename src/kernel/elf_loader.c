@@ -39,10 +39,7 @@ elf_result_t elf_load(const char* path, uint32_t load_base) {
             min_vaddr = phdrs[i].p_vaddr;
         }
     }
-    uint32_t offset = 0;
-    if (hdr->e_entry < 0x800000) {
-        offset = load_base - min_vaddr;
-    }
+    uint32_t offset = load_base - min_vaddr;
     for (int i = 0; i < hdr->e_phnum; i++) {
         elf_program_header_t* ph = &phdrs[i];
         if (ph->p_type != PT_LOAD) continue;

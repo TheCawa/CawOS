@@ -2,6 +2,7 @@
 #include "drivers/io.h"
 #include "kernel/idt.h"
 #include "kernel/interrupt.h"
+#include <stdarg.h>
 
 volatile int g_interrupt_requested = 0;
 static unsigned int state = 0xACE1;
@@ -311,6 +312,16 @@ int strncasecmp(const char* s1, const char* s2, int n) {
     return 0;
 }
 
+char* strstr(const char* haystack, const char* needle) {
+    if (!needle[0]) return (char*)haystack;
+    for (int i = 0; haystack[i] != '\0'; i++) {
+        int j = 0;
+        while (needle[j] != '\0' && haystack[i + j] == needle[j]) j++;
+        if (needle[j] == '\0') return (char*)(haystack + i);
+    }
+    return NULL;
+}
+
 void sleep_ms(uint32_t ms) {
     uint32_t ticks_to_wait = ms / 10; 
     if (ticks_to_wait == 0) ticks_to_wait = 1;
@@ -330,4 +341,119 @@ char* strncpy(char* dest, const char* src, int n) {
         dest[i] = '\0';
     }
     return dest;
+}
+
+int strnlen(const char* s, int max_len) {
+    int i = 0;
+    while (i < max_len && s[i] != '\0') i++;
+    return i;
+}
+
+char* strncat(char* dest, const char* src, int n) {
+    int dest_len = strlen(dest);
+    int i = 0;
+    for (i = 0; i < n && src[i] != '\0'; i++) {
+        dest[dest_len + i] = src[i];
+    }
+    dest[dest_len + i] = '\0';
+    return dest;
+}
+
+int safe_strcpy(char* dest, const char* src, int dest_size) {
+    if (dest_size <= 0) return 0;
+    int i = 0;
+    for (i = 0; i < dest_size - 1 && src[i] != '\0'; i++) {
+        dest[i] = src[i];
+    }
+    dest[i] = '\0';
+    return i;
+}
+
+int safe_strcat(char* dest, const char* src, int dest_size) {
+    if (dest_size <= 0) return 0;
+    int dest_len = strnlen(dest, dest_size);
+    if (dest_len >= dest_size - 1) return dest_len;
+    int i = 0;
+    for (i = 0; dest_len + i < dest_size - 1 && src[i] != '\0'; i++) {
+        dest[dest_len + i] = src[i];
+    }
+    dest[dest_len + i] = '\0';
+    return dest_len + i;
+}
+
+int vsnprintf(char* buf, int size, const char* fmt, va_list args) {
+    if (size <= 0) return 0;
+    int i = 0;
+    va_list args_copy;
+    while (*fmt && i < size - 1) {
+        if (*fmt == '%') {
+            fmt++;
+            switch (*fmt) {
+                case 's': {
+                    va_copy(args_copy, args);
+                    char* str = va_arg(args_copy, char*);
+                    va_end(args_copy);
+                    va_arg(args, char*);
+                    if (str) {
+                        while (*str && i < size - 1) buf[i++] = *str++;
+                    }
+                    break;
+                }
+                case 'd': {
+                    va_copy(args_copy, args);
+                    int num = va_arg(args_copy, int);
+                    va_end(args_copy);
+                    va_arg(args, int);
+                    char numbuf[12];
+                    itoa(num, numbuf);
+                    for (int j = 0; numbuf[j] && i < size - 1; j++) buf[i++] = numbuf[j];
+                    break;
+                }
+                case 'x': {
+                    va_copy(args_copy, args);
+                    unsigned int num = va_arg(args_copy, unsigned int);
+                    va_end(args_copy);
+                    va_arg(args, unsigned int);
+                    char hex[] = "0123456789abcdef";
+                    char tmp[9] = {0};
+                    for (int j = 7; j >= 0; j--) {
+                        tmp[j] = hex[num & 0xF];
+                        num >>= 4;
+                    }
+                    int start = 0;
+                    while (start < 7 && tmp[start] == '0') start++;
+                    for (int j = start; tmp[j] && i < size - 1; j++) buf[i++] = tmp[j];
+                    break;
+                }
+                case 'c': {
+                    va_copy(args_copy, args);
+                    char c = (char)va_arg(args_copy, int);
+                    va_end(args_copy);
+                    va_arg(args, int);
+                    buf[i++] = c;
+                    break;
+                }
+                case '%':
+                    buf[i++] = '%';
+                    break;
+                default:
+                    buf[i++] = '%';
+                    if (*fmt && i < size - 1) buf[i++] = *fmt;
+                    break;
+            }
+        } else {
+            buf[i++] = *fmt;
+        }
+        fmt++;
+    }
+    buf[i] = '\0';
+    return i;
+}
+
+int snprintf(char* buf, int size, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int result = vsnprintf(buf, size, fmt, args);
+    va_end(args);
+    return result;
 }

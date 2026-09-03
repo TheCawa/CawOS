@@ -11,6 +11,8 @@
 #define SYS_READ    8
 #define SYS_WRITE   9
 #define SYS_CLOSE   10
+#define SYS_YIELD   11
+#define SYS_GETPID  12
 
 static inline void sys_exit() {
     __asm__ volatile(
@@ -121,6 +123,28 @@ static inline int sys_close(int fd) {
         : "=a"(result)
         : "r"(fd)
         : "ebx", "memory"
+    );
+    return result;
+}
+
+static inline void sys_yield() {
+    __asm__ volatile(
+        "movl $11, %%eax\n"
+        "int $0x80\n"
+        :
+        :
+        : "eax", "memory"
+    );
+}
+
+static inline int sys_getpid() {
+    int result;
+    __asm__ volatile(
+        "movl $12, %%eax\n"
+        "int $0x80\n"
+        : "=a"(result)
+        :
+        : "memory"
     );
     return result;
 }

@@ -3,6 +3,7 @@
 #include "drivers/screen.h"
 #include "libc/util.h"
 #include "drivers/io.h"
+#include "kernel/config.h"
 
 void cmd_shutdown(char* args, int* row) {
     clear_screen();
@@ -13,6 +14,7 @@ void cmd_shutdown(char* args, int* row) {
     int col2 = (80 - strlen(msg2)) / 2;
     print_at_color((char*)msg1, 11, col1, 0x0F);
     print_at_color((char*)msg2, 12, col2, 0x0B);
+    config_set_shutdown_clean(1);
     __asm__ __volatile__("cli");
     acpi_shutdown();
     for(;;) __asm__ __volatile__("hlt");

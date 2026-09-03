@@ -2,17 +2,26 @@
 #define UTIL_H
 
 #include <stdint.h>
+#include <stdarg.h>
+#include <stddef.h>
 
 int strcmp(const char* s1, const char* s2);
 char* strncpy(char* dest, const char* src, int n);
 int strncmp(const char* s1, const char* s2, int n);
 int strlen(const char* s);
+int strnlen(const char* s, int max_len);
 char* strchr(const char* s, int c);
 int strcasecmp(const char* s1, const char* s2);
 int strncasecmp(const char* s1, const char* s2, int n);
+char* strstr(const char* haystack, const char* needle);
 
 void strcpy(char* dest, const char* src);
 void strcat(char* dest, const char* src);
+char* strncat(char* dest, const char* src, int n);
+int safe_strcpy(char* dest, const char* src, int dest_size);
+int safe_strcat(char* dest, const char* src, int dest_size);
+int snprintf(char* buf, int size, const char* fmt, ...);
+int vsnprintf(char* buf, int size, const char* fmt, va_list args);
 void memset(void* dest, unsigned char val, int len);
 void memmove(void* dest, const void* src, int len);
 void memcpy(void* dest, const void* src, int len);

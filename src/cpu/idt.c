@@ -1,8 +1,11 @@
 #include "kernel/idt.h"
 #include "libc/util.h"
 #include "drivers/screen.h"
+#include "drivers/serial.h"
 #include "drivers/io.h"
 #include "kernel/interrupt.h"
+#include "kernel/process.h"
+#include "kernel/scheduler.h"
 #include "fs.h"
 #include "kernel/memory.h"
 #include "gui/mouse.h"
@@ -19,7 +22,7 @@ extern void isr33();
 extern void isr44();
 extern void isr128();
 volatile int watchdog_counter = 0;
-const int WATCHDOG_LIMIT = 5000;
+const int WATCHDOG_LIMIT = 500;
 volatile unsigned char key_queue[KEY_QUEUE_SIZE] = {0};
 volatile int key_queue_head = 0;
 volatile int key_queue_tail = 0;
@@ -68,6 +71,65 @@ void idt_set_gate(unsigned char num, unsigned long base, unsigned short sel, uns
 
 void idt_reload() {
     idt_load((unsigned int)&idtp);
+}
+
+#define MAX_STACK_FRAMES 8
+
+static int is_valid_frame_ptr(uint32_t addr) {
+    if (addr < 0x100000 || (addr & 3)) return 0;
+    uint32_t max_ram = ((uint32_t)get_total_memory()) * 1024 * 1024;
+    if (addr + 8 > max_ram) return 0;
+    return 1;
+}
+
+static void bsod_serial_dump(const char* error_name, struct registers *r) {
+    serial_puts(SERIAL_COM1, "[BSOD] ");
+    serial_puts(SERIAL_COM1, error_name);
+    serial_puts(SERIAL_COM1, "\r\n");
+
+    char hex_buf[12];
+    serial_puts(SERIAL_COM1, "EIP: "); int_to_hex(r->eip, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    serial_puts(SERIAL_COM1, "CS:  "); int_to_hex(r->cs, hex_buf);  serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    serial_puts(SERIAL_COM1, "EAX: "); int_to_hex(r->eax, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    serial_puts(SERIAL_COM1, "EBX: "); int_to_hex(r->ebx, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    serial_puts(SERIAL_COM1, "ECX: "); int_to_hex(r->ecx, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    serial_puts(SERIAL_COM1, "EDX: "); int_to_hex(r->edx, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    serial_puts(SERIAL_COM1, "ESP: "); int_to_hex(r->kernel_esp, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    serial_puts(SERIAL_COM1, "EBP: "); int_to_hex(r->ebp, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+
+    if (r->int_no == 14) {
+        uint32_t cr2;
+        __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+        serial_puts(SERIAL_COM1, "CR2: "); int_to_hex(cr2, hex_buf); serial_puts(SERIAL_COM1, hex_buf); serial_puts(SERIAL_COM1, "\r\n");
+    }
+
+    serial_puts(SERIAL_COM1, "Stack trace:\r\n");
+    uint32_t ebp = r->ebp;
+    for (int i = 0; i < MAX_STACK_FRAMES && is_valid_frame_ptr(ebp); i++) {
+        uint32_t* frame = (uint32_t*)ebp;
+        serial_puts(SERIAL_COM1, "Frame ");
+        char num_buf[8];
+        itoa(i, num_buf);
+        serial_puts(SERIAL_COM1, num_buf);
+        serial_puts(SERIAL_COM1, ": ");
+        int_to_hex(frame[1], hex_buf);
+        serial_puts(SERIAL_COM1, hex_buf);
+        serial_puts(SERIAL_COM1, "\r\n");
+        ebp = frame[0];
+    }
+}
+
+static void print_stack_frame_to_screen(int row, int idx, uint32_t eip) {
+    char line[64];
+    char hex_buf[12];
+    char num_buf[8];
+    strcpy(line, "Frame ");
+    itoa(idx, num_buf);
+    strcat(line, num_buf);
+    strcat(line, ": ");
+    int_to_hex(eip, hex_buf);
+    strcat(line, hex_buf);
+    print_at_color(line, row, 3, 0x1F);
 }
 
 void draw_bsod(const char* error_name, struct registers *r) {
@@ -162,6 +224,28 @@ void draw_bsod(const char* error_name, struct registers *r) {
     print_at_color("EBP:", ebp_label_row, 22, 0x1F);
     int_to_hex(r->ebp, hex_buf);
     print_at_color(hex_buf, ebp_val_row, 26, 0x1F);
+
+    int cr2_row = ebp_label_row + 1;
+    if (r->int_no == 14) {
+        uint32_t cr2;
+        __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+        print_at_color("CR2:", cr2_row, 3, 0x1F);
+        int_to_hex(cr2, hex_buf);
+        print_at_color(hex_buf, cr2_row, 8, 0x1F);
+    }
+
+    bsod_serial_dump(error_name, r);
+
+    int trace_label_row = line2_row + 1;
+    int trace_start_row = line2_row + 2;
+    print_at_color("Stack trace:", trace_label_row, 3, 0x1F);
+    uint32_t ebp = r->ebp;
+    for (int i = 0; i < MAX_STACK_FRAMES && is_valid_frame_ptr(ebp); i++) {
+        uint32_t* frame = (uint32_t*)ebp;
+        print_stack_frame_to_screen(trace_start_row + i, i, frame[1]);
+        ebp = frame[0];
+    }
+
     print_at_color("-----------------------------------------------", line2_row, 3, 0x1F);
     print_at_color("Please restart your computer.", restart_row, 3, 0x1F);
 }
@@ -170,11 +254,17 @@ __attribute__((force_align_arg_pointer))
 void isr_handler(struct registers *r) {
     if (r->int_no == 32) {
         system_ticks++;
+        watchdog_counter++;
+        if (watchdog_counter >= WATCHDOG_LIMIT) {
+            draw_bsod("WATCHDOG TIMEOUT", r);
+            __asm__ volatile("cli; hlt");
+        }
         port_byte_out(0x20, 0x20);
+        scheduler_tick();
         return;
     }
     if (r->int_no == 44) {
-        while (1) {
+        for (int i = 0; i < 256; i++) {
             uint8_t status = port_byte_in(0x64);
             if (!(status & 0x01)) break;
             uint8_t byte = port_byte_in(0x60);
@@ -185,7 +275,7 @@ void isr_handler(struct registers *r) {
         return;
     }
     if (r->int_no == 33) {
-        while (1) {
+        for (int i = 0; i < 256; i++) {
             uint8_t status = port_byte_in(0x64);
             if (!(status & 0x01)) break;
             uint8_t byte = port_byte_in(0x60);
@@ -213,14 +303,21 @@ void isr_handler(struct registers *r) {
         uint32_t param3 = r->edx;
         switch (syscall_num) {
             case 1: // sys_exit
-                __asm__ volatile(
-                    "mov %0, %%esp\n"
-                    "sti\n"
-                    "pop %%ebp\n"
-                    "ret\n"
-                    : : "m"(exit_recovery_esp) : "memory"
-                );
-                __builtin_unreachable();
+                if (current_process) {
+                    current_process->state = PROCESS_ZOMBIE;
+                    schedule();
+                }
+                break;
+
+            case 11: // sys_yield
+                scheduler_yield();
+                break;
+
+            case 12: // sys_getpid
+                {
+                    process_t* p = process_get_current();
+                    r->eax = p ? p->pid : 0;
+                }
                 break;
 
             case 2: // sys_putchar
@@ -229,19 +326,19 @@ void isr_handler(struct registers *r) {
                     int max_cols = g_is_graphics ? screen_get_cols() : 80;
                     int max_rows = g_is_graphics ? screen_get_rows() : 25;
 
-                        if (c == '\n') {
-                            syscall_cursor_x = 0;
-                            syscall_cursor_y++;
-                            if (syscall_cursor_y >= max_rows) {
-                                scroll();
-                                syscall_cursor_y = max_rows - 1;
-                            }
-                        } else {
-                            if (syscall_cursor_y >= max_rows) {
-                                scroll();
-                                syscall_cursor_y = max_rows - 1;
-                            }
-                            print_char_at(c, syscall_cursor_y, syscall_cursor_x, 0x0F);
+                    if (c == '\n') {
+                        syscall_cursor_x = 0;
+                        syscall_cursor_y++;
+                        if (syscall_cursor_y >= max_rows) {
+                            scroll();
+                            syscall_cursor_y = max_rows - 1;
+                        }
+                    } else {
+                        if (syscall_cursor_y >= max_rows) {
+                            scroll();
+                            syscall_cursor_y = max_rows - 1;
+                        }
+                        print_char_at(c, syscall_cursor_y, syscall_cursor_x, 0x0F);
                         syscall_cursor_x++;
                         if (syscall_cursor_x >= max_cols) {
                             syscall_cursor_x = 0;
@@ -444,6 +541,8 @@ void isr_handler(struct registers *r) {
         return;
     }
     if (r->int_no == 255) {
+        port_byte_out(0xA0, 0x20);
+        port_byte_out(0x20, 0x20);
         return;
     }
     char* err_desc;
@@ -492,7 +591,7 @@ void idt_init() {
     idt_set_gate(32, (unsigned int)isr32, 0x08, 0x8E);
     idt_set_gate(33, (unsigned int)isr33, 0x08, 0x8E);
     idt_set_gate(44, (unsigned int)isr44, 0x08, 0x8E);
-    idt_set_gate(0x80, (unsigned int)isr128, 0x08, 0x8E);
+    idt_set_gate(0x80, (unsigned int)isr128, 0x08, 0xEE);
 
     idt_load((unsigned int)&idtp);
     init_timer(100);

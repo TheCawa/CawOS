@@ -2,15 +2,19 @@
 #include "drivers/io.h"
 #include "libc/util.h"
 #include "drivers/screen.h"
+#include "drivers/serial.h"
 #include "fs.h"
 #include "kernel/idt.h"
+#include "kernel/gdt.h"
 #include "commands.h"
 #include "drivers/audio.h"
 #include "acpi.h"
 #include "drivers/pci.h"
 #include "drivers/ac97.h"
 #include "kernel/memory.h"
+#include "kernel/scheduler.h"
 #include "libc/logger.h"
+#include "kernel/config.h"
 
 #define NULL ((void*)0)
 #define MAX_HISTORY 10
@@ -25,10 +29,222 @@ int COLS;
 int ROWS;
 int g_last_command_row = -1;
 
+static void load_serial_config(void) {
+    int dummy_row = 0;
+    char saved_dir[32];
+    strcpy(saved_dir, current_dir);
+
+    fs_cd("/", &dummy_row);
+    if (!fs_cd("core", &dummy_row) || !fs_cd("config", &dummy_row)) {
+        fs_cd(saved_dir, &dummy_row);
+        return;
+    }
+
+    uint32_t size = fs_get_size("serial");
+    if (size == 0) {
+        fs_cd(saved_dir, &dummy_row);
+        return;
+    }
+    uint32_t sectors = (size + 511) / 512;
+    uint32_t buffer_size = sectors * 512;
+    uint8_t* buf = (uint8_t*)malloc(buffer_size + 1);
+    if (!buf) {
+        fs_cd(saved_dir, &dummy_row);
+        return;
+    }
+    if (fs_load_to_memory("serial", buf)) {
+        buf[size] = '\0';
+        if (strstr((char*)buf, "serial_console=1") != NULL) {
+            g_serial_mirror_enabled = 1;
+            LOG_INFO("SERIAL", "Command output mirroring enabled");
+        }
+    }
+    free(buf);
+    fs_cd(saved_dir, &dummy_row);
+}
+
+static void draw_prompt(int row, int current_max_cols) {
+    extern char current_dir[32];
+    char prompt[36];
+    memset(prompt, 0, 36);
+    strcpy(prompt, current_dir);
+    strcat(prompt, "> ");
+    for (int c = 0; c < current_max_cols; c++) print_char_at(' ', row, c, 0x0F);
+    print_at_color(prompt, row, 0, 0x0F);
+}
+
+static void insert_char(char key, char* key_buffer, int* buffer_idx, int* row, int* col,
+                        int prompt_len, int current_max_rows, int current_max_cols) {
+    if (*buffer_idx >= 1023) return;
+    key_buffer[(*buffer_idx)++] = key;
+    char str[2] = {key, 0};
+    print_at(str, *row, *col);
+    (*col)++;
+    if (*col >= current_max_cols) {
+        *col = 0;
+        (*row)++;
+        while (*row >= current_max_rows) {
+            scroll();
+            *row = current_max_rows - 1;
+        }
+    }
+    update_cursor(*row, *col);
+}
+
+static void erase_char(char* key_buffer, int* buffer_idx, int* row, int* col, int prompt_len) {
+    if (*buffer_idx <= 0) return;
+    (*buffer_idx)--;
+    (*col)--;
+    if (*col < prompt_len) *col = prompt_len;
+    print_char_at(' ', *row, *col, 0x0F);
+    update_cursor(*row, *col);
+}
+
+static void autocomplete(char* key_buffer, int* buffer_idx, int* row, int* col,
+                         int prompt_len, int current_max_cols) {
+    if (*buffer_idx == 0) return;
+    char typed[128];
+    int len = (*buffer_idx < 127) ? *buffer_idx : 127;
+    memcpy(typed, key_buffer, len);
+    typed[len] = '\0';
+    extern command_t __start_cmd;
+    extern command_t __stop_cmd;
+    command_t* cmd;
+    command_t* match = NULL;
+    int matches = 0;
+    for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
+        if (strncasecmp(cmd->name, typed, len) == 0) {
+            matches++;
+            match = cmd;
+        }
+    }
+    if (matches == 1 && match) {
+        for (int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', *row, k, 0x0F);
+        int cmd_len = strlen(match->name);
+        memcpy(key_buffer, match->name, cmd_len);
+        *buffer_idx = cmd_len;
+        key_buffer[*buffer_idx] = '\0';
+        print_at_color(match->name, *row, prompt_len, 0x0F);
+        *col = prompt_len + *buffer_idx;
+        update_cursor(*row, *col);
+    }
+}
+
+static void history_prev(char* key_buffer, int* buffer_idx, int* row, int* col,
+                         int prompt_len, int current_max_cols) {
+    if (history_count == 0 || history_idx >= history_count - 1) return;
+    history_idx++;
+    for (int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', *row, k, 0x0F);
+    strcpy(key_buffer, cmd_history[history_count - 1 - history_idx]);
+    *buffer_idx = strlen(key_buffer);
+    print_at_color(key_buffer, *row, prompt_len, 0x0F);
+    *col = prompt_len + *buffer_idx;
+    update_cursor(*row, *col);
+}
+
+static void history_next(char* key_buffer, int* buffer_idx, int* row, int* col,
+                         int prompt_len, int current_max_cols) {
+    if (history_idx < 0) return;
+    history_idx--;
+    for (int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', *row, k, 0x0F);
+    if (history_idx == -1) {
+        memset(key_buffer, 0, 1024);
+        *buffer_idx = 0;
+        *col = prompt_len;
+    } else {
+        strcpy(key_buffer, cmd_history[history_count - 1 - history_idx]);
+        *buffer_idx = strlen(key_buffer);
+        print_at_color(key_buffer, *row, prompt_len, 0x0F);
+        *col = prompt_len + *buffer_idx;
+    }
+    update_cursor(*row, *col);
+}
+
+static void submit_command(char* key_buffer, int* buffer_idx, int* row, int* col,
+                           int* prompt_len, int current_max_rows, int current_max_cols) {
+    key_buffer[*buffer_idx] = '\0';
+    disable_cursor();
+    if (*buffer_idx > 0) {
+        if (history_count == 0 || strcmp(cmd_history[history_count - 1], key_buffer) != 0) {
+            if (history_count < MAX_HISTORY) {
+                strcpy(cmd_history[history_count++], key_buffer);
+            } else {
+                for (int i = 1; i < MAX_HISTORY; i++)
+                    strcpy(cmd_history[i - 1], cmd_history[i]);
+                strcpy(cmd_history[MAX_HISTORY - 1], key_buffer);
+            }
+        }
+        history_idx = -1;
+        (*row)++;
+        g_last_command_row = -1;
+        execute_command(key_buffer, row);
+        if (g_last_command_row >= 0) {
+            *row = g_last_command_row;
+        }
+    } else {
+        (*row)++;
+    }
+    while (*row >= current_max_rows) {
+        scroll();
+        *row = current_max_rows - 1;
+    }
+    *buffer_idx = 0;
+    draw_prompt(*row, current_max_cols);
+    *prompt_len = strlen(current_dir) + 2;
+    *col = *prompt_len;
+    enable_cursor(13, 15);
+    update_cursor(*row, *col);
+}
+
+static void handle_serial_byte(char byte, char* key_buffer, int* buffer_idx, int* row, int* col,
+                               int* prompt_len, int current_max_rows, int current_max_cols) {
+    if (byte == '\r' || byte == '\n') {
+        serial_putc(SERIAL_COM1, '\r');
+        serial_putc(SERIAL_COM1, '\n');
+        submit_command(key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
+    } else if (byte == '\b' || byte == 0x7F) {
+        serial_putc(SERIAL_COM1, '\b');
+        serial_putc(SERIAL_COM1, ' ');
+        serial_putc(SERIAL_COM1, '\b');
+        erase_char(key_buffer, buffer_idx, row, col, *prompt_len);
+    } else if (byte == '\t') {
+        autocomplete(key_buffer, buffer_idx, row, col, *prompt_len, current_max_cols);
+    } else if (byte == 0x03) {
+        // Ctrl+C - clear current input
+        memset(key_buffer, 0, 1024);
+        *buffer_idx = 0;
+        *col = *prompt_len;
+        draw_prompt(*row, current_max_cols);
+        update_cursor(*row, *col);
+    } else if (byte == 0x0C) {
+        // Ctrl+L - clear screen
+        clear_screen();
+        *row = 0;
+        draw_prompt(*row, current_max_cols);
+        *col = *prompt_len;
+        update_cursor(*row, *col);
+    } else if (byte >= 0x20 && byte <= 0x7E) {
+        serial_putc(SERIAL_COM1, byte);
+        insert_char(byte, key_buffer, buffer_idx, row, col, *prompt_len, current_max_rows, current_max_cols);
+    }
+}
+
+static void poll_serial_input(char* key_buffer, int* buffer_idx, int* row, int* col,
+                              int* prompt_len, int current_max_rows, int current_max_cols) {
+    /* Real hardware without a COM1 receiver can return status 0xFF, making
+       serial_has_data() appear always true. Cap the loop and pet the
+       watchdog so a stuck UART cannot hang the system. */
+    for (int i = 0; i < 256 && serial_has_data(SERIAL_COM1); i++) {
+        watchdog_reset();
+        char byte = serial_read(SERIAL_COM1);
+        handle_serial_byte(byte, key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
+    }
+}
+
 void main() {
     heap_init();
     logger_init();
-    LOG_INFO("SYS", "CawOS v0.3.1 Bootstrap started");
+    LOG_INFO("SYS", "CawOS v0.3.2 Bootstrap started");
     LOG_INFO("MEM", "Heap initialized");
     uint32_t vbe_fb     = *((volatile uint32_t*)0x0520);
     uint32_t vbe_pitch  = *((volatile uint32_t*)0x0524);
@@ -44,6 +260,8 @@ void main() {
     }
     LOG_INFO("IRQ", "Initializing PIC...");
     pic_init();
+    LOG_INFO("GDT", "Initializing GDT and TSS...");
+    gdt_init();
     LOG_INFO("IRQ", "Initializing IDT...");
     idt_init();
     LOG_INFO("ACPI", "Parsing RSDP...");
@@ -52,10 +270,14 @@ void main() {
     fpu_init();
     LOG_INFO("VFS", "Mounting FS...");
     fs_init();
+    config_init();
     LOG_INFO("PCI", "Scanning bus 0...");
     pci_init();
+    LOG_INFO("SCHED", "Initializing scheduler...");
+    scheduler_init();
     LOG_INFO("SYS", "Core init complete. Ready for shell.");
     logger_enable_screen(false);
+    load_serial_config();
     screen_set_font_scale(3, 2, 7, 4);
     clear_screen();
     disable_cursor();
@@ -69,7 +291,6 @@ void main() {
             uint8_t* sound_buffer = (uint8_t*)malloc(buffer_size);
             if (sound_buffer && fs_load_to_memory("boot_sound_cawos", sound_buffer)) {
                 ac97_play_pcm(sound_buffer, size);
-                free(sound_buffer);
             }
         }
     }
@@ -82,7 +303,11 @@ void main() {
     int buffer_idx = 0;
     int prompt_len = 0;
     static char key_buffer[1024];
-    print_line_scroll("CawOS v0.3.1", 0, &row, 0x0B);
+    // Shutdown clean warning temporarily disabled.
+    // if (!shutdown_clean) {
+    //     print_line_scroll("WARNING: System was not shut down properly.", 0, &row, 0x0C);
+    // }
+    print_line_scroll("CawOS v0.3.2", 0, &row, 0x0B);
     print_line_scroll("Type 'help' to see all commands.", 0, &row, 0x0F);
     row++; 
     enable_cursor(13, 15);
@@ -100,11 +325,17 @@ void main() {
     __asm__ volatile("sti");
 
     while(1) {
+        schedule();
+        scheduler_reap_zombies();
+
         watchdog_reset();
         int current_max_rows = screen_get_rows();
         int current_max_cols = screen_get_cols();
         update_cursor(row, col);
-        __asm__ volatile("hlt"); 
+        __asm__ volatile("hlt");
+
+        poll_serial_input(key_buffer, &buffer_idx, &row, &col, &prompt_len, current_max_rows, current_max_cols);
+
         if (key_queue_head != key_queue_tail) {
             unsigned char scancode = key_queue[key_queue_head];
             key_queue_head = (key_queue_head + 1) % KEY_QUEUE_SIZE;
@@ -118,131 +349,30 @@ void main() {
                     shift_active = 1;
                 } else if (scancode == CAPSLOCK) {
                     caps_active = !caps_active;
-                } else if (scancode == 0x48) { 
-                    if (history_count > 0 && history_idx < history_count - 1) {
-                        history_idx++;
-                        for(int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', row, k, 0x0F);
-                        strcpy(key_buffer, cmd_history[history_count - 1 - history_idx]);
-                        buffer_idx = strlen(key_buffer);
-                        print_at_color(key_buffer, row, prompt_len, 0x0F);
-                        col = prompt_len + buffer_idx;
-                        update_cursor(row, col);
-                    }
+                } else if (scancode == 0x48) {
+                    history_prev(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_cols);
                 } else if (scancode == 0x50) {
-                    if (history_idx >= 0) {
-                        history_idx--;
-                        for(int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', row, k, 0x0F);
-                        if (history_idx == -1) {
-                            memset(key_buffer, 0, 1024);
-                            buffer_idx = 0;
-                            col = prompt_len;
-                        } else {
-                            strcpy(key_buffer, cmd_history[history_count - 1 - history_idx]);
-                            buffer_idx = strlen(key_buffer);
-                            print_at_color(key_buffer, row, prompt_len, 0x0F);
-                            col = prompt_len + buffer_idx;
-                        }
-                        update_cursor(row, col);
-                    }
+                    history_next(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_cols);
                 } else if (scancode == ESC) {
-                    continue; 
-                } else if (scancode == ENTER) {
-                    key_buffer[buffer_idx] = '\0';
-                    disable_cursor();
-                    if (buffer_idx > 0) {
-                        if (history_count == 0 || strcmp(cmd_history[history_count - 1], key_buffer) != 0) {
-                            if (history_count < MAX_HISTORY) {
-                                strcpy(cmd_history[history_count++], key_buffer);
-                            } else {
-                                for (int i = 1; i < MAX_HISTORY; i++)
-                                    strcpy(cmd_history[i - 1], cmd_history[i]);
-                                strcpy(cmd_history[MAX_HISTORY - 1], key_buffer);
-                            }
-                        }
-                        history_idx = -1;
-                        row++;
-                        g_last_command_row = -1;
-                        execute_command(key_buffer, &row);
-                        if (g_last_command_row >= 0) {
-                            row = g_last_command_row;
-                        }
-                    } else {
-                        row++;
-                    }
-                    while (row >= current_max_rows) {
-                        scroll();
-                        row = current_max_rows - 1;
-                    }
-                    buffer_idx = 0;
-                    memset(prompt, 0, 36);
-                    strcpy(prompt, current_dir);
-                    strcat(prompt, "> ");
-                    prompt_len = strlen(prompt); 
-                    for (int c = 0; c < current_max_cols; c++) print_char_at(' ', row, c, 0x0F);
-                    print_at_color(prompt, row, 0, 0x0F);
-                    col = prompt_len;
-                    enable_cursor(13, 15);
-                    update_cursor(row, col);
                     continue;
+                } else if (scancode == ENTER) {
+                    submit_command(key_buffer, &buffer_idx, &row, &col, &prompt_len, current_max_rows, current_max_cols);
                 } else if (scancode == BACKSPACE) {
-                    if (buffer_idx > 0) {
-                        buffer_idx--; 
-                        col--;
-                        if (col < prompt_len) col = prompt_len;
-                        print_char_at(' ', row, col, 0x0F);
-                        update_cursor(row, col);
-                    }
+                    erase_char(key_buffer, &buffer_idx, &row, &col, prompt_len);
                 } else if (scancode == 0x0F) {
-                    if (buffer_idx == 0) continue; 
-                    char typed[128];
-                    int len = (buffer_idx < 127) ? buffer_idx : 127;
-                    memcpy(typed, key_buffer, len);
-                    typed[len] = '\0';
-                    extern command_t __start_cmd;
-                    extern command_t __stop_cmd;
-                    command_t* cmd;
-                    command_t* match = NULL;
-                    int matches = 0;
-                    for (cmd = &__start_cmd; cmd < &__stop_cmd; cmd++) {
-                        if (strncasecmp(cmd->name, typed, len) == 0) {
-                            matches++;
-                            match = cmd;
-                        }
-                    }
-                    if (matches == 1 && match) {
-                        for(int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', row, k, 0x0F);
-                        int cmd_len = strlen(match->name);
-                        memcpy(key_buffer, match->name, cmd_len);
-                        buffer_idx = cmd_len;
-                        key_buffer[buffer_idx] = '\0';
-                        print_at_color(match->name, row, prompt_len, 0x0F);
-                        col = prompt_len + buffer_idx; 
-                        update_cursor(row, col);
-                    }
+                    autocomplete(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_cols);
                 } else {
                     char key = shift_active ? shift_map[scancode] : ascii_map[scancode];
                     if (key >= 'a' && key <= 'z') {
                         if (caps_active && !shift_active) key -= 32;
-                        if (caps_active && shift_active) key += 32; 
+                        if (caps_active && shift_active) key += 32;
                     } else if (key >= 'A' && key <= 'Z') {
                         if (caps_active && !shift_active) key += 32;
                         if (caps_active && shift_active) key -= 32;
                     }
 
-                    if (key != 0 && buffer_idx < 1023) {
-                        key_buffer[buffer_idx++] = key;
-                        char str[2] = {key, 0};
-                        print_at(str, row, col);
-                        col++;
-                        if (col >= current_max_cols) {
-                            col = 0;
-                            row++; 
-                            while (row >= current_max_rows) {
-                                scroll();
-                                row = current_max_rows - 1;
-                            }
-                        }
-                        update_cursor(row, col);
+                    if (key != 0) {
+                        insert_char(key, key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_rows, current_max_cols);
                     }
                 }
             }

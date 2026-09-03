@@ -4,6 +4,7 @@
 #include "libc/util.h"
 #include "kernel/interrupt.h"
 #include "kernel/idt.h"
+#include "libc/keyboard_map.h"
 
 void render_noise() {
     if (!g_is_graphics) {
@@ -47,6 +48,13 @@ void cmd_noise(char* args, int* row) {
     disable_cursor();
     while (!is_interrupt_requested()) {
         render_noise();
+        if (key_queue_head != key_queue_tail) {
+            unsigned char scancode = key_queue[key_queue_head];
+            if (!(scancode & 0x80) && scancode == ESC) {
+                break;
+            }
+            key_queue_head = (key_queue_head + 1) % KEY_QUEUE_SIZE;
+        }
         sleep_ms(30);
     }
     clear_interrupt();

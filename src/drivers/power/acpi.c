@@ -2,6 +2,7 @@
 #include "libc/util.h"
 #include "drivers/io.h"
 
+
 uint32_t g_acpiCpuCount = 0;
 uint8_t  g_acpiCpuIds[MAX_CPU_COUNT];
 uint8_t* g_localApicAddr = 0;
@@ -157,17 +158,27 @@ static int parse_rsdp(uint8_t* p) {
     return 1;
 }
 
-void acpi_init() {
-    uint8_t* p   = (uint8_t*)0x000e0000;
-    uint8_t* end = (uint8_t*)0x000fffff;
-
+static int acpi_scan_for_rsdp(uint8_t* start, uint8_t* end) {
+    uint8_t* p = start;
     while (p < end) {
         uint64_t sig = *(uint64_t*)p;
         if (sig == 0x2052545020445352) { // "RSD PTR "
-            if (parse_rsdp(p)) break;
+            if (parse_rsdp(p)) return 1;
         }
         p += 16;
     }
+    return 0;
+}
+
+void acpi_init() {
+    uint16_t ebda_seg = *(uint16_t*)0x40E;
+    if (ebda_seg) {
+        uint8_t* ebda_start = (uint8_t*)((uint32_t)ebda_seg << 4);
+        uint8_t* ebda_end   = ebda_start + 1024;
+        if (acpi_scan_for_rsdp(ebda_start, ebda_end)) return;
+    }
+
+    acpi_scan_for_rsdp((uint8_t*)0x000e0000, (uint8_t*)0x000fffff);
 }
 
 void acpi_shutdown() {

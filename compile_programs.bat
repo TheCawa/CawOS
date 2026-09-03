@@ -1,4 +1,8 @@
 @echo off
+setlocal
+
+cd /d "%~dp0"
+
 echo Compiling user programs...
 
 echo Compiling fileview.elf...

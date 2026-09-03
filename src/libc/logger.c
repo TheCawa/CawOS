@@ -1,5 +1,6 @@
 #include "libc/logger.h"
 #include "drivers/screen.h"
+#include "drivers/serial.h"
 #include "libc/util.h"
 #include <stdarg.h>
 #include <stddef.h>
@@ -29,13 +30,6 @@ static int log_count = 0;
 static bool screen_output = true;
 static log_level_t min_level = LOG_DEBUG;
 static int log_screen_row = 0;
-static void safe_strcpy(char* dest, const char* src, int max_len) {
-    int i;
-    for (i = 0; i < max_len - 1 && src[i] != '\0'; i++) {
-        dest[i] = src[i];
-    }
-    dest[i] = '\0';
-}
 
 static int log_vsnprintf(char* buf, int size, const char* fmt, va_list args) {
     int i = 0;
@@ -92,6 +86,7 @@ static int log_vsnprintf(char* buf, int size, const char* fmt, va_list args) {
 }
 
 void logger_init(void) {
+    serial_init(SERIAL_COM1);
     screen_set_font_scale(1, 1, 1, 1);
     memset(log_buffer, 0, sizeof(log_buffer));
     log_write_idx = 0;
@@ -149,6 +144,8 @@ void log_print(log_level_t level, const char* module, const char* fmt, ...) {
     log_buffer[idx].timestamp = system_ticks;
     log_write_idx++;
     if (log_count < LOG_BUFFER_SIZE) log_count++;
+    serial_puts(SERIAL_COM1, buffer);
+    serial_putc(SERIAL_COM1, '\n');
     if (screen_output) {
         unsigned char color = LOG_COLORS[level];
         int max_rows = screen_get_rows();

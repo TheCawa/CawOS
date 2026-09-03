@@ -2,6 +2,7 @@
 #include "drivers/screen.h"
 #include "gui/desktop.h"
 #include "acpi.h"
+#include "kernel/config.h"
 
 void cmd_gfx(char* args, int* row) {
     if (!g_is_graphics) {
@@ -15,7 +16,9 @@ void cmd_gfx(char* args, int* row) {
     *row = 0;
     print_line_scroll("Exited desktop mode", 0, row, 0x0F);
     print_line_scroll("Shutdown system...", 0, row, 0x0F);
+    config_set_shutdown_clean(1);
     acpi_shutdown();
+    for (;;) __asm__ volatile("hlt");
 }
 
 REGISTER_COMMAND("gfx", cmd_gfx, 0);

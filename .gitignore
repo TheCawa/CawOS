@@ -4,3 +4,5 @@ CawOS.img
 qemu_vga.log
 extracted/
 .ini
+test.sh
+tests/

@@ -119,7 +119,7 @@ int ac97_init() {
 }
 
 void ac97_play_pcm(uint8_t* data, uint32_t size) {
-    if (!ac97_ready) return;
+    if (!ac97_ready || size == 0) return;
     uint32_t offset = 0;
     uint8_t idx = 0;
     memset(s_bdl, 0, sizeof(s_bdl));

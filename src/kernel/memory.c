@@ -49,6 +49,9 @@ void* malloc(size_t size) {
         return NULL;
     }
     if (size == 0) return NULL;
+    uint32_t eflags;
+    __asm__ volatile("pushfl; popl %0" : "=r"(eflags));
+    __asm__ volatile("cli");
     size = (size + 7) & ~7;
     block_t* current = free_list;
     while (current) {
@@ -64,16 +67,22 @@ void* malloc(size_t size) {
             }
 
             current->free = 0;
-            return (void*)((char*)current + sizeof(block_t));
+            void* result = (void*)((char*)current + sizeof(block_t));
+            if (eflags & 0x200) __asm__ volatile("sti");
+            return result;
         }
         current = current->next;
     }
 
+    if (eflags & 0x200) __asm__ volatile("sti");
     return NULL; // Out of memory
 }
 
 void free(void* ptr) {
     if (!ptr) return;
+    uint32_t eflags;
+    __asm__ volatile("pushfl; popl %0" : "=r"(eflags));
+    __asm__ volatile("cli");
     block_t* block = (block_t*)((char*)ptr - sizeof(block_t));
     block->free = 1;
     if (block->next && block->next->free) {
@@ -92,6 +101,7 @@ void free(void* ptr) {
         prev->size += sizeof(block_t) + block->size;
         prev->next = block->next;
     }
+    if (eflags & 0x200) __asm__ volatile("sti");
 }
 
 void* calloc(size_t num, size_t size) {

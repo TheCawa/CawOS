@@ -47,7 +47,7 @@ static void notepad_draw_cb(window_t* win, int cx, int cy, int cw, int ch) {
     }
     window_draw_rect(win, 0, ch - 20, cw, 20, 0x00EEEEEE);
     window_draw_line(win, 0, ch - 20, cw, ch - 20, 0x00CCCCCC);
-    window_draw_text(win, "Type text... Enter for newline. Backspace to delete.", 10, ch - 14, 0x00555555, COLOR_TRANSPARENT);
+    window_draw_text(win, "Type text... Enter for newline.", 10, ch - 14, 0x00555555, COLOR_TRANSPARENT);
 }
 
 static void notepad_key_cb(window_t* win, char ascii) {

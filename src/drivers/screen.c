@@ -1,5 +1,6 @@
 #include "drivers/screen.h"
 #include "drivers/io.h"
+#include "drivers/serial.h"
 #include "libc/util.h"
 #include "libc/font.h"
 #include "kernel/memory.h"
@@ -97,7 +98,7 @@ void gfx_putpixel(uint32_t x, uint32_t y, uint32_t color) {
     if (g_bpp == 32) { pixel[0] = b; pixel[1] = g; pixel[2] = r; pixel[3] = 0; }
     else if (g_bpp == 24) { pixel[0] = b; pixel[1] = g; pixel[2] = r; }
     else if (g_bpp == 16) {
-        uint16_t c16 = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+        uint16_t c16 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
         pixel[0] = c16 & 0xFF; pixel[1] = c16 >> 8;
     }
 }
@@ -293,6 +294,7 @@ void print_line_scroll(const char* msg, int col, int* row, unsigned char color) 
         cursor_row = *row;
         cursor_col = col + strlen(msg);
     }
+    serial_mirror_line(msg);
     (*row)++;
 }
 

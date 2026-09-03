@@ -22,12 +22,15 @@ for /r src %%f in (*.c) do (
     if !errorlevel! neq 0 (
         echo %%f | findstr /I "\\recovery\\" >nul
         if !errorlevel! neq 0 (
-            echo     Compiling %%~nxf...
-            set "file_dir=%%~dpf"
-            set "rel_dir=!file_dir:%cd%\src\=!"
-            set "obj_dir=build\!rel_dir!"
-            if not exist "!obj_dir!" mkdir "!obj_dir!"
-            i686-elf-gcc -march=i486 -ffreestanding -fno-pie -fno-stack-protector -m32 -Iinclude -Wall -O2 -Wno-array-bounds -c "%%f" -o "!obj_dir!%%~nf.o" || goto error
+            echo %%f | findstr /I "\\elf\\" >nul
+            if !errorlevel! neq 0 (
+                echo     Compiling %%~nxf...
+                set "file_dir=%%~dpf"
+                set "rel_dir=!file_dir:%cd%\src\=!"
+                set "obj_dir=build\!rel_dir!"
+                if not exist "!obj_dir!" mkdir "!obj_dir!"
+                i686-elf-gcc -march=i486 -ffreestanding -fno-pie -fno-stack-protector -m32 -Iinclude -Wall -O2 -Wno-array-bounds -c "%%f" -o "!obj_dir!%%~nf.o" || goto error
+            )
         )
     )
 )

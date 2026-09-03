@@ -1,6 +1,7 @@
 [bits 32]
 extern isr_handler
 extern exit_recovery_esp
+extern current_process
 global isr0
 global idt_load
 global isr13
@@ -10,15 +11,25 @@ global isr33
 global isr44
 global isr128
 global isr_ignore
-global run_program_asm
+global enter_user_mode
+global syscall_kstack_top
+global kernel_stack_top
+global context_switch
 
 ; --- Стек ядра для обработки системных вызовов ---
 section .bss
 align 16
-syscall_kstack:      resb 16384          ; 16 КБ — достаточно для scroll+memmove+memcpy
+syscall_kstack:      resb 16384          ; 16 КБ
 syscall_kstack_top:                      ; ESP будет указывать сюда (стек растёт вниз)
-saved_user_esp:      resd 1 
+kernel_stack:        resb 32768          ; 32 КБ стека ring 0 (TSS ESP0)
+kernel_stack_top:
+saved_user_esp:      resd 1
 section .text
+
+extern exit_recovery_esp
+SYS_EXIT equ 1
+USER_CODE_SELECTOR equ 0x1B
+USER_DATA_SELECTOR equ 0x23
 
 isr_ignore:
     push dword 0
@@ -60,6 +71,19 @@ isr33:
     jmp isr_common_stub
 
 isr128:
+    cmp eax, SYS_EXIT
+    jne .handle_other
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov esp, [exit_recovery_esp]
+    pop ebp
+    sti
+    ret
+
+.handle_other:
     push dword 0          ; Error code
     push dword 0x80       ; Interrupt number
     pusha                 ; General purpose registers
@@ -73,21 +97,10 @@ isr128:
     mov fs, ax
     mov gs, ax
 
-    mov [saved_user_esp], esp   ; Сохраняем указатель на struct registers
-    mov esp, syscall_kstack_top ; Переключаемся на стек ядра
-    
-    and esp, -16
-    sub esp, 12
-    
-    sti                         ; <--- ДОБАВИТЬ СЮДА: разрешаем прерывания во время тяжелого syscall
 
-    push dword [saved_user_esp] 
+    push esp
     call isr_handler
-    add esp, 16
-
-    cli                   ; Запрещаем прерывания перед возвратом в user-space (уже есть)
-    
-    mov esp, [saved_user_esp]   ; Восстанавливаем user stack
+    add esp, 4
 
     pop eax               ; Restore DS
     mov ds, ax
@@ -99,9 +112,6 @@ isr128:
     add esp, 8
     iret
 
-; -------------------------------------------------------
-; Общий стаб для всех остальных прерываний
-; -------------------------------------------------------
 isr_common_stub:
     pusha
     cld
@@ -114,38 +124,63 @@ isr_common_stub:
     mov fs, ax
     mov gs, ax
 
-    ; --- ИСПРАВЛЕНИЕ ДЛЯ ВЛОЖЕННЫХ ПРЕРЫВАНИЙ И ВЫРАВНИВАНИЯ ESP ---
-    mov ecx, esp          ; Временный указатель на struct registers
-    and esp, -16          ; Динамически выравниваем ESP по границе 16 байт
-    sub esp, 8            ; Резервируем 8 байт отступа (для сохранения выравнивания)
-    push ecx              ; Сохраняем оригинальный ESP на стек [будет лежать в esp + 4]
-    push ecx              ; Пушим указатель на struct registers как аргумент Си-функции [в esp]
-    
+    push esp              ; pointer to struct registers
     call isr_handler
-    
-    mov esp, [esp + 4]    ; Восстанавливаем оригинальный ESP прямо со стека!
-    ; --------------------------------------------------------
+    add esp, 4
 
-    pop eax               ; Восстанавливаем сегменты данных
+    pop eax               ; restore data segments
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
 
     popa
-    add esp, 8            ; Очищаем error_code и int_no
+    add esp, 8            ; discard error_code and int_no
     iret
 
-run_program_asm:
+enter_user_mode:
     push ebp
     mov ebp, esp
     mov eax, [ebp + 8]      ; entry point
     mov edx, [ebp + 12]     ; stack_top
-    mov [exit_recovery_esp], esp
-    mov esp, edx
-    sti
-    call eax
-    cli
-    mov esp, [exit_recovery_esp]
+    mov [exit_recovery_esp], ebp
+    push dword USER_DATA_SELECTOR   ; SS
+    push edx                        ; ESP
+    pushf
+    pop ecx
+    or ecx, 0x200                   ; Enable interrupts in user mode.
+    push ecx                        ; EFLAGS
+    push dword USER_CODE_SELECTOR   ; CS
+    push eax                        ; EIP
+    mov ax, USER_DATA_SELECTOR
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    iret
+
+context_switch:
+    push ebp
+    push ebx
+    push esi
+    push edi
+    pushfd
+    mov eax, [esp + 24]
+    mov edx, [esp + 28]
+
+    mov [eax], esp          ; prev->saved_esp = current esp (points at pushed eflags)
+    mov ebx, [esp]          ; current eflags
+    mov [eax + 4], ebx      ; prev->saved_eflags
+
+    mov ebx, [edx + 4]      ; next->saved_eflags
+    mov ecx, [edx]          ; next->saved_esp
+    mov [ecx], ebx          ; place eflags on top of next's stack
+    mov esp, ecx            ; switch to next's stack
+
+    popfd
+    pop edi
+    pop esi
+    pop ebx
     pop ebp
     ret

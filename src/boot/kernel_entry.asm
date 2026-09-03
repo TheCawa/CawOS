@@ -9,7 +9,8 @@ global fpu_init
 section .text
 
 _start:
-    mov esp, 0x7FFFF
+    extern kernel_stack_top
+    mov esp, kernel_stack_top
     extern __bss_start
     extern __bss_end
     mov edi, __bss_start
@@ -52,8 +53,12 @@ fpu_init:
     ret
     
 common_bios_io:
-    sgdt [saved_gdtr] 
+    sgdt [saved_gdtr]
     sidt [saved_idtr]
+    in al, 0x21
+    mov [saved_pic_master], al
+    in al, 0xA1
+    mov [saved_pic_slave], al
     pushad
     cld
 
@@ -245,6 +250,10 @@ pm32_return:
 .done:
     lgdt [saved_gdtr]
     lidt [saved_idtr]
+    mov al, [saved_pic_slave]
+    out 0xA1, al
+    mov al, [saved_pic_master]
+    out 0x21, al
     popad
     pop ebp
     ret
@@ -254,6 +263,8 @@ saved_gdtr: dw 0
             dd 0
 saved_idtr: dw 0
             dd 0
+saved_pic_master: db 0
+saved_pic_slave:  db 0
 align 16
 gdt_start2:
     dq 0x0                        ; Null
