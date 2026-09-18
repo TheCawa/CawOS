@@ -410,13 +410,19 @@ int fs_load_to_memory(char* name, uint8_t* address) {
             strcmp(fs[i].name, name) == 0 &&
             strcmp(fs[i].dir, current_dir) == 0) {
             uint16_t current_cluster = fs[i].first_cluster;
-            uint32_t sector_offset = 0;
-            while (current_cluster != CLUSTER_EOF && current_cluster < MAX_CLUSTERS) {
+            uint32_t remaining = fs[i].size_bytes;
+            uint32_t offset = 0;
+            uint8_t tmp[512];
+            while (current_cluster != CLUSTER_EOF && 
+                   current_cluster < MAX_CLUSTERS && 
+                   remaining > 0) {
                 uint32_t lba = DATA_REGION_START + current_cluster;
-                fs_read_sector(lba, address + (sector_offset * 512));
-                
+                fs_read_sector(lba, tmp);
+                uint32_t to_copy = (remaining > 512) ? 512 : remaining;
+                memcpy(address + offset, tmp, to_copy);
+                offset += to_copy;
+                remaining -= to_copy;
                 current_cluster = cawfat[current_cluster];
-                sector_offset++;
             }
             return 1;
         }

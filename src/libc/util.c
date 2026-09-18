@@ -312,6 +312,21 @@ int strncasecmp(const char* s1, const char* s2, int n) {
     return 0;
 }
 
+char* strcasestr(const char* haystack, const char* needle) {
+    if (!*needle) return (char*)haystack;
+    for (; *haystack; haystack++) {
+        const char* h = haystack;
+        const char* n = needle;
+        while (*h && *n && 
+               (*h == *n || *h - 32 == *n || *h + 32 == *n)) {
+            h++;
+            n++;
+        }
+        if (!*n) return (char*)haystack;
+    }
+    return NULL;
+}
+
 char* strstr(const char* haystack, const char* needle) {
     if (!needle[0]) return (char*)haystack;
     for (int i = 0; haystack[i] != '\0'; i++) {

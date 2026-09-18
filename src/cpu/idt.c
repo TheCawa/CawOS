@@ -191,7 +191,7 @@ void draw_bsod(const char* error_name, struct registers *r) {
     int ebp_label_row = is_gfx ? 27 : 17;
     int ebp_val_row = is_gfx ? 27 : 17;
     int line2_row = is_gfx ? 30 : 19;
-    int restart_row = is_gfx ? 34 : 21;
+    int restart_row = is_gfx ? 40 : 21;
     int mid = cols / 2 - 12;
     print_at_color(" [ CawOS System Error ] ", title_row, mid, 0x1F);
     print_at_color("A fatal exception has occurred. The system has been halted", msg1_row, 3, 0x1F);

@@ -14,6 +14,7 @@ char* strchr(const char* s, int c);
 int strcasecmp(const char* s1, const char* s2);
 int strncasecmp(const char* s1, const char* s2, int n);
 char* strstr(const char* haystack, const char* needle);
+char* strcasestr(const char* haystack, const char* needle);
 
 void strcpy(char* dest, const char* src);
 void strcat(char* dest, const char* src);
