@@ -94,11 +94,19 @@ static void insert_char(char key, char* key_buffer, int* buffer_idx, int* row, i
     update_cursor(*row, *col);
 }
 
-static void erase_char(char* key_buffer, int* buffer_idx, int* row, int* col, int prompt_len) {
+static void erase_char(char* key_buffer, int* buffer_idx, int* row, int* col, int prompt_len,
+                       int current_max_cols) {
     if (*buffer_idx <= 0) return;
     (*buffer_idx)--;
     (*col)--;
-    if (*col < prompt_len) *col = prompt_len;
+    if (*col < 0) {
+        if (*row > 0) {
+            (*row)--;
+            *col = current_max_cols - 1;
+        } else {
+            *col = prompt_len;
+        }
+    }
     print_char_at(' ', *row, *col, 0x0F);
     update_cursor(*row, *col);
 }
@@ -236,7 +244,7 @@ static void handle_serial_byte(char byte, char* key_buffer, int* buffer_idx, int
         serial_putc(SERIAL_COM1, '\b');
         serial_putc(SERIAL_COM1, ' ');
         serial_putc(SERIAL_COM1, '\b');
-        erase_char(key_buffer, buffer_idx, row, col, *prompt_len);
+        erase_char(key_buffer, buffer_idx, row, col, *prompt_len, current_max_cols);
     } else if (byte == '\t') {
         autocomplete(key_buffer, buffer_idx, row, col, *prompt_len, current_max_rows, current_max_cols);
     } else if (byte == 0x03) {
@@ -412,7 +420,7 @@ void main() {
                 } else if (scancode == ENTER) {
                     submit_command(key_buffer, &buffer_idx, &row, &col, &prompt_len, current_max_rows, current_max_cols);
                 } else if (scancode == BACKSPACE) {
-                    erase_char(key_buffer, &buffer_idx, &row, &col, prompt_len);
+                    erase_char(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_cols);
                 } else if (scancode == 0x0F) {
                     autocomplete(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_rows, current_max_cols);
                 } else {
