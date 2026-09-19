@@ -106,13 +106,31 @@ void cmd_cat(char* args, int* row) {
 
         if (c == '\n' || line_idx >= (int)sizeof(line) - 1) {
             line[line_idx] = '\0';
+            int len = line_idx;
+            int max_cols = screen_get_cols();
+            if (max_cols < 1) max_cols = 1;
 
-            if (current_line >= skip) {
-                print_line_scroll(line, 0, row, 0x0E);
-                shown++;
+            if (len == 0) {
+                if (current_line >= skip && shown < lines_per_page) {
+                    print_line_scroll("", 0, row, 0x0E);
+                    shown++;
+                }
+                current_line++;
+            } else {
+                for (int off = 0; off < len; off += max_cols) {
+                    int chunk_len = len - off;
+                    if (chunk_len > max_cols) chunk_len = max_cols;
+                    char save = line[off + chunk_len];
+                    line[off + chunk_len] = '\0';
+                    if (current_line >= skip && shown < lines_per_page) {
+                        print_line_scroll(line + off, 0, row, 0x0E);
+                        shown++;
+                    }
+                    current_line++;
+                    line[off + chunk_len] = save;
+                    if (shown >= lines_per_page) break;
+                }
             }
-
-            current_line++;
             line_idx = 0;
         } else if (c != '\r') {
             if (line_idx < (int)sizeof(line) - 1) {

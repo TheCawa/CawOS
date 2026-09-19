@@ -66,5 +66,6 @@ void bios_write_sector(uint32_t lba, uint8_t* data);
 void bios_read_sector(uint32_t lba, uint8_t* buffer);
 void pic_init();
 void idt_reload();
+int fs_cd_abs(const char* path);
 
 #endif

@@ -28,28 +28,31 @@ static int caps_active = 0;
 int COLS;
 int ROWS;
 int g_last_command_row = -1;
+extern volatile uint32_t system_ticks;
+extern void cmd_bigclock(char* args, int* row);
+uint32_t g_idle_timeout_ticks = 60 * 100;  /* 60 сек при таймере 100 Гц */
+int g_idle_enabled = 1;
+static uint32_t last_activity = 0;
 
 static void load_serial_config(void) {
     int dummy_row = 0;
     char saved_dir[32];
     strcpy(saved_dir, current_dir);
-
     fs_cd("/", &dummy_row);
     if (!fs_cd("core", &dummy_row) || !fs_cd("config", &dummy_row)) {
-        fs_cd(saved_dir, &dummy_row);
+        fs_cd_abs(saved_dir);
         return;
     }
-
     uint32_t size = fs_get_size("serial");
     if (size == 0) {
-        fs_cd(saved_dir, &dummy_row);
+        fs_cd_abs(saved_dir);
         return;
     }
     uint32_t sectors = (size + 511) / 512;
     uint32_t buffer_size = sectors * 512;
     uint8_t* buf = (uint8_t*)malloc(buffer_size + 1);
     if (!buf) {
-        fs_cd(saved_dir, &dummy_row);
+        fs_cd_abs(saved_dir);
         return;
     }
     if (fs_load_to_memory("serial", buf)) {
@@ -60,7 +63,7 @@ static void load_serial_config(void) {
         }
     }
     free(buf);
-    fs_cd(saved_dir, &dummy_row);
+    fs_cd_abs(saved_dir);
 }
 
 static void draw_prompt(int row, int current_max_cols) {
@@ -100,8 +103,43 @@ static void erase_char(char* key_buffer, int* buffer_idx, int* row, int* col, in
     update_cursor(*row, *col);
 }
 
+static void input_pos(int idx, int prompt_len, int cols, int* line, int* col) {
+    int cap = cols - prompt_len;
+    if (cap < 1) cap = 1;
+    if (idx < cap) { *line = 0; *col = prompt_len + idx; return; }
+    int rem = idx - cap;
+    *line = 1 + rem / cols;
+    *col = rem % cols;
+}
+
+static void reset_input_area(char* key_buffer, int* buffer_idx, int* row, int* col,
+                             int prompt_len, int current_max_rows, int current_max_cols) {
+    int line, c;
+    input_pos(*buffer_idx, prompt_len, current_max_cols, &line, &c);
+    int start = *row - line;
+    for (int i = 0; i <= line; i++) {
+        int r = start + i;
+        if (r < 0 || r >= current_max_rows) continue;
+        for (int k = 0; k < current_max_cols; k++) print_char_at(' ', r, k, 0x0F);
+    }
+    *buffer_idx = 0;
+    *row = start;
+    draw_prompt(*row, current_max_cols);
+    *col = prompt_len;
+}
+
+static void replay_into_buffer(const char* src, int len, char* key_buffer, int* buffer_idx,
+                               int* row, int* col, int prompt_len,
+                               int current_max_rows, int current_max_cols) {
+    for (int i = 0; i < len; i++) {
+        insert_char(src[i], key_buffer, buffer_idx, row, col,
+                    prompt_len, current_max_rows, current_max_cols);
+    }
+    update_cursor(*row, *col);
+}
+
 static void autocomplete(char* key_buffer, int* buffer_idx, int* row, int* col,
-                         int prompt_len, int current_max_cols) {
+                         int prompt_len, int current_max_rows, int current_max_cols) {
     if (*buffer_idx == 0) return;
     char typed[128];
     int len = (*buffer_idx < 127) ? *buffer_idx : 127;
@@ -119,45 +157,35 @@ static void autocomplete(char* key_buffer, int* buffer_idx, int* row, int* col,
         }
     }
     if (matches == 1 && match) {
-        for (int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', *row, k, 0x0F);
-        int cmd_len = strlen(match->name);
-        memcpy(key_buffer, match->name, cmd_len);
-        *buffer_idx = cmd_len;
-        key_buffer[*buffer_idx] = '\0';
-        print_at_color(match->name, *row, prompt_len, 0x0F);
-        *col = prompt_len + *buffer_idx;
-        update_cursor(*row, *col);
+        char tmp[128];
+        safe_strcpy(tmp, match->name, 128);
+        int cmd_len = strlen(tmp);
+        reset_input_area(key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
+        replay_into_buffer(tmp, cmd_len, key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
     }
 }
 
 static void history_prev(char* key_buffer, int* buffer_idx, int* row, int* col,
-                         int prompt_len, int current_max_cols) {
+                         int prompt_len, int current_max_rows, int current_max_cols) {
     if (history_count == 0 || history_idx >= history_count - 1) return;
     history_idx++;
-    for (int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', *row, k, 0x0F);
-    strcpy(key_buffer, cmd_history[history_count - 1 - history_idx]);
-    *buffer_idx = strlen(key_buffer);
-    print_at_color(key_buffer, *row, prompt_len, 0x0F);
-    *col = prompt_len + *buffer_idx;
-    update_cursor(*row, *col);
+    char tmp[1024];
+    safe_strcpy(tmp, cmd_history[history_count - 1 - history_idx], 1024);
+    int len = strlen(tmp);
+    reset_input_area(key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
+    replay_into_buffer(tmp, len, key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
 }
 
 static void history_next(char* key_buffer, int* buffer_idx, int* row, int* col,
-                         int prompt_len, int current_max_cols) {
+                         int prompt_len, int current_max_rows, int current_max_cols) {
     if (history_idx < 0) return;
     history_idx--;
-    for (int k = prompt_len; k < current_max_cols; k++) print_char_at(' ', *row, k, 0x0F);
-    if (history_idx == -1) {
-        memset(key_buffer, 0, 1024);
-        *buffer_idx = 0;
-        *col = prompt_len;
-    } else {
-        strcpy(key_buffer, cmd_history[history_count - 1 - history_idx]);
-        *buffer_idx = strlen(key_buffer);
-        print_at_color(key_buffer, *row, prompt_len, 0x0F);
-        *col = prompt_len + *buffer_idx;
-    }
-    update_cursor(*row, *col);
+    char tmp[1024];
+    if (history_idx == -1) tmp[0] = '\0';
+    else safe_strcpy(tmp, cmd_history[history_count - 1 - history_idx], 1024);
+    int len = strlen(tmp);
+    reset_input_area(key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
+    replay_into_buffer(tmp, len, key_buffer, buffer_idx, row, col, prompt_len, current_max_rows, current_max_cols);
 }
 
 static void submit_command(char* key_buffer, int* buffer_idx, int* row, int* col,
@@ -167,11 +195,11 @@ static void submit_command(char* key_buffer, int* buffer_idx, int* row, int* col
     if (*buffer_idx > 0) {
         if (history_count == 0 || strcmp(cmd_history[history_count - 1], key_buffer) != 0) {
             if (history_count < MAX_HISTORY) {
-                strcpy(cmd_history[history_count++], key_buffer);
+                safe_strcpy(cmd_history[history_count++], key_buffer, 256);
             } else {
                 for (int i = 1; i < MAX_HISTORY; i++)
-                    strcpy(cmd_history[i - 1], cmd_history[i]);
-                strcpy(cmd_history[MAX_HISTORY - 1], key_buffer);
+                    safe_strcpy(cmd_history[i - 1], cmd_history[i], 256);
+                safe_strcpy(cmd_history[MAX_HISTORY - 1], key_buffer, 256);
             }
         }
         history_idx = -1;
@@ -194,10 +222,12 @@ static void submit_command(char* key_buffer, int* buffer_idx, int* row, int* col
     *col = *prompt_len;
     enable_cursor(13, 15);
     update_cursor(*row, *col);
+    last_activity = (uint32_t)system_ticks;
 }
 
 static void handle_serial_byte(char byte, char* key_buffer, int* buffer_idx, int* row, int* col,
                                int* prompt_len, int current_max_rows, int current_max_cols) {
+    last_activity = (uint32_t)system_ticks;
     if (byte == '\r' || byte == '\n') {
         serial_putc(SERIAL_COM1, '\r');
         serial_putc(SERIAL_COM1, '\n');
@@ -208,7 +238,7 @@ static void handle_serial_byte(char byte, char* key_buffer, int* buffer_idx, int
         serial_putc(SERIAL_COM1, '\b');
         erase_char(key_buffer, buffer_idx, row, col, *prompt_len);
     } else if (byte == '\t') {
-        autocomplete(key_buffer, buffer_idx, row, col, *prompt_len, current_max_cols);
+        autocomplete(key_buffer, buffer_idx, row, col, *prompt_len, current_max_rows, current_max_cols);
     } else if (byte == 0x03) {
         // Ctrl+C - clear current input
         memset(key_buffer, 0, 1024);
@@ -244,7 +274,7 @@ static void poll_serial_input(char* key_buffer, int* buffer_idx, int* row, int* 
 void main() {
     heap_init();
     logger_init();
-    LOG_INFO("SYS", "CawOS v0.3.3 Bootstrap started");
+    LOG_INFO("SYS", "CawOS v0.3.4 Bootstrap started");
     LOG_INFO("MEM", "Heap initialized");
     uint32_t vbe_fb     = *((volatile uint32_t*)0x0520);
     uint32_t vbe_pitch  = *((volatile uint32_t*)0x0524);
@@ -278,6 +308,10 @@ void main() {
     LOG_INFO("SYS", "Core init complete. Ready for shell.");
     logger_enable_screen(false);
     load_serial_config();
+    int idle_en = 1, idle_min = 1;
+    config_get_idle(&idle_en, &idle_min);
+    g_idle_enabled = idle_en;
+    g_idle_timeout_ticks = (uint32_t)idle_min * 60 * 100;
     screen_set_font_scale(3, 2, 7, 4);
     clear_screen();
     disable_cursor();
@@ -307,7 +341,7 @@ void main() {
     // if (!shutdown_clean) {
     //     print_line_scroll("WARNING: System was not shut down properly.", 0, &row, 0x0C);
     // }
-    print_line_scroll("CawOS v0.3.3", 0, &row, 0x0B);
+    print_line_scroll("CawOS v0.3.4", 0, &row, 0x0B);
     print_line_scroll("Type 'help' to see all commands.", 0, &row, 0x0F);
     row++; 
     enable_cursor(13, 15);
@@ -323,6 +357,7 @@ void main() {
 
     watchdog_reset();
     __asm__ volatile("sti");
+    last_activity = (uint32_t)system_ticks;
 
     while(1) {
         schedule();
@@ -331,6 +366,24 @@ void main() {
         watchdog_reset();
         int current_max_rows = screen_get_rows();
         int current_max_cols = screen_get_cols();
+        if (g_idle_enabled &&
+            ((uint32_t)system_ticks - last_activity) >= g_idle_timeout_ticks) {
+            int dummy_row = 0;
+            cmd_bigclock("--idle", &dummy_row);
+            last_activity = (uint32_t)system_ticks;
+            row = 0;
+            draw_prompt(row, current_max_cols);
+            char tmp[1024];
+            int n = buffer_idx;
+            memcpy(tmp, key_buffer, n);
+            buffer_idx = 0;
+            col = prompt_len;
+            for (int i = 0; i < n; i++) {
+                insert_char(tmp[i], key_buffer, &buffer_idx, &row, &col,
+                            prompt_len, current_max_rows, current_max_cols);
+            }
+            update_cursor(row, col);
+        }
         update_cursor(row, col);
         __asm__ volatile("hlt");
 
@@ -340,6 +393,7 @@ void main() {
             unsigned char scancode = key_queue[key_queue_head];
             key_queue_head = (key_queue_head + 1) % KEY_QUEUE_SIZE;
             feed_entropy(scancode);
+            last_activity = (uint32_t)system_ticks;
 
             if (scancode & 0x80) {
                 unsigned char released = scancode & 0x7F;
@@ -350,9 +404,9 @@ void main() {
                 } else if (scancode == CAPSLOCK) {
                     caps_active = !caps_active;
                 } else if (scancode == 0x48) {
-                    history_prev(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_cols);
+                    history_prev(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_rows, current_max_cols);
                 } else if (scancode == 0x50) {
-                    history_next(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_cols);
+                    history_next(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_rows, current_max_cols);
                 } else if (scancode == ESC) {
                     continue;
                 } else if (scancode == ENTER) {
@@ -360,7 +414,7 @@ void main() {
                 } else if (scancode == BACKSPACE) {
                     erase_char(key_buffer, &buffer_idx, &row, &col, prompt_len);
                 } else if (scancode == 0x0F) {
-                    autocomplete(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_cols);
+                    autocomplete(key_buffer, &buffer_idx, &row, &col, prompt_len, current_max_rows, current_max_cols);
                 } else {
                     char key = shift_active ? shift_map[scancode] : ascii_map[scancode];
                     if (key >= 'a' && key <= 'z') {

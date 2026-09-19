@@ -254,6 +254,27 @@ int fs_cd(char* path, int* row) {
     return 0;
 }
 
+int fs_cd_abs(const char* path) {
+    if (path == NULL || strlen(path) >= 32) return 0;
+    int dummy_row = 0;
+    if (!fs_cd("/", &dummy_row)) return 0;
+    if (strcmp(path, "/") == 0) return 1;
+
+    char tmp[32];
+    strcpy(tmp, path);
+    char* p = tmp;
+    while (*p) {
+        while (*p == '/') p++;
+        if (!*p) break;
+        char* slash = strchr(p, '/');
+        if (slash) *slash = '\0';
+        if (!fs_cd(p, &dummy_row)) return 0;
+        if (!slash) break;
+        p = slash + 1;
+    }
+    return 1;
+}
+
 int fs_write(char* name, uint8_t* data, uint32_t len) {
     if (strcmp(name, "boot_sound_cawos") == 0) return 0;
 
