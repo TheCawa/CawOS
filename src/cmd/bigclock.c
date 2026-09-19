@@ -47,7 +47,8 @@ static void draw_colon(int row0, int col0, int on, unsigned char color) {
 }
 
 void cmd_bigclock(char* args, int* row) {
-    (void)args;
+    int idle_mode = 0;
+    if (args != NULL && strstr(args, "--idle") != NULL) idle_mode = 1;
     (void)row;
 
     int cols = screen_get_cols();
@@ -98,10 +99,12 @@ void cmd_bigclock(char* args, int* row) {
 
         if (key_queue_head != key_queue_tail) {
             unsigned char scancode = key_queue[key_queue_head];
-            if (!(scancode & 0x80) && scancode == ESC) {
-                break;
-            }
             key_queue_head = (key_queue_head + 1) % KEY_QUEUE_SIZE;
+            if (!(scancode & 0x80)) {
+                if (idle_mode || scancode == ESC) {
+                    break;
+                }
+            }
         }
         sleep_ms(250);
     }

@@ -284,15 +284,38 @@ void scroll() {
 
 void print_line_scroll(const char* msg, int col, int* row, unsigned char color) {
     int max_rows = screen_get_rows();
-    while (*row >= max_rows) {
-        scroll();
-        *row = max_rows - 1;
+    int max_cols = screen_get_cols();
+    if (max_cols < 1) max_cols = 1;
+    if (col < 0) col = 0;
+    if (col >= max_cols) col = max_cols - 1;
+    int len = strlen(msg);
+    if (len == 0) {
+        while (*row >= max_rows) { scroll(); *row = max_rows - 1; }
+        if (*row < 0) *row = 0;
+        if (g_is_graphics) { cursor_row = *row; cursor_col = col; }
+        serial_mirror_line(msg);
+        (*row)++;
+        return;
     }
-    if (*row < 0) *row = 0;
-    print_at_color(msg, *row, col, color);
-    if (g_is_graphics) {
-        cursor_row = *row;
-        cursor_col = col + strlen(msg);
+    int off = 0;
+    int cur_col = col;
+    while (off < len) {
+        int width = max_cols - cur_col;
+        if (width < 1) width = 1;
+        int chunk = len - off;
+        if (chunk > width) chunk = width;
+        while (*row >= max_rows) { scroll(); *row = max_rows - 1; }
+        if (*row < 0) *row = 0;
+        for (int i = 0; i < chunk; i++) {
+            print_char_at(msg[off + i], *row, cur_col + i, color);
+        }
+        if (g_is_graphics) {
+            cursor_row = *row;
+            cursor_col = cur_col + chunk;
+        }
+        off += chunk;
+        cur_col = 0;
+        if (off < len) (*row)++;
     }
     serial_mirror_line(msg);
     (*row)++;
