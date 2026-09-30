@@ -15,8 +15,8 @@
 #include "kernel/scheduler.h"
 #include "libc/logger.h"
 #include "kernel/config.h"
+#include "libc/font.h"
 
-#define NULL ((void*)0)
 #define MAX_HISTORY 10
 static char cmd_history[MAX_HISTORY][256];
 static int history_count = 0;
@@ -248,14 +248,12 @@ static void handle_serial_byte(char byte, char* key_buffer, int* buffer_idx, int
     } else if (byte == '\t') {
         autocomplete(key_buffer, buffer_idx, row, col, *prompt_len, current_max_rows, current_max_cols);
     } else if (byte == 0x03) {
-        // Ctrl+C - clear current input
         memset(key_buffer, 0, 1024);
         *buffer_idx = 0;
         *col = *prompt_len;
         draw_prompt(*row, current_max_cols);
         update_cursor(*row, *col);
     } else if (byte == 0x0C) {
-        // Ctrl+L - clear screen
         clear_screen();
         *row = 0;
         draw_prompt(*row, current_max_cols);
@@ -280,9 +278,10 @@ static void poll_serial_input(char* key_buffer, int* buffer_idx, int* row, int* 
 }
 
 void main() {
+    clear_screen();
     heap_init();
     logger_init();
-    LOG_INFO("SYS", "CawOS v0.3.4 Bootstrap started");
+    LOG_INFO("SYS", "CawOS v0.3.5 Bootstrap started");
     LOG_INFO("MEM", "Heap initialized");
     uint32_t vbe_fb     = *((volatile uint32_t*)0x0520);
     uint32_t vbe_pitch  = *((volatile uint32_t*)0x0524);
@@ -296,6 +295,7 @@ void main() {
     } else {
         LOG_ERROR("VIDEO", "No VBE Framebuffer found at 0x0520");
     }
+    font_init();
     LOG_INFO("IRQ", "Initializing PIC...");
     pic_init();
     LOG_INFO("GDT", "Initializing GDT and TSS...");
@@ -320,18 +320,54 @@ void main() {
     config_get_idle(&idle_en, &idle_min);
     g_idle_enabled = idle_en;
     g_idle_timeout_ticks = (uint32_t)idle_min * 60 * 100;
-    screen_set_font_scale(3, 2, 7, 4);
     clear_screen();
+    {
+        char saved_dir[32];
+        strcpy(saved_dir, current_dir);
+        if (fs_cd_abs("/core/config")) {
+            uint32_t size = fs_get_size("font");
+            if (size > 0 && size < 64) {
+                char font_name[64];
+                memset(font_name, 0, sizeof(font_name));
+                if (fs_load_to_memory("font", (uint8_t*)font_name)) {
+                    font_name[size - 1] = '\0';
+                    if (strcasecmp(font_name, "8x8") == 0) {
+                        font_set_current(font_get_8x8());
+                        screen_set_font_scale(1, 1);
+                    }
+                    else if (strcasecmp(font_name, "8x16") == 0) {
+                        font_set_current(font_get_8x16());
+                        screen_set_font_scale(1, 1);
+                    }
+                    else {
+                        char path[64];
+                        snprintf(path, sizeof(path), "/core/res/fonts/%s", font_name);
+                        if (!font_load_psf(path)) {
+                            font_set_current(font_get_8x16());
+                            screen_set_font_scale(1, 1);
+                        }
+                    }
+                }
+            } else {
+                font_set_current(font_get_8x16());
+                screen_set_font_scale(1, 1);
+            }
+        } else {
+            font_set_current(font_get_8x16());
+            screen_set_font_scale(1, 1);
+        }
+        fs_cd_abs(saved_dir);
+    }
     disable_cursor();
     draw_logo();
-
+    screen_set_font_scale(1, 1);
     if (ac97_init() == 0) {
-        uint32_t size = fs_get_size("boot_sound_cawos");
+        uint32_t size = fs_get_size_abs("/core/res/audio/boot");
         if (size > 0) {
             uint32_t sectors = (size / 512) + 1;
             uint32_t buffer_size = sectors * 512;
             uint8_t* sound_buffer = (uint8_t*)malloc(buffer_size);
-            if (sound_buffer && fs_load_to_memory("boot_sound_cawos", sound_buffer)) {
+            if (sound_buffer && fs_load_to_memory_abs("/core/res/audio/boot", sound_buffer)) {
                 ac97_play_pcm(sound_buffer, size);
             }
         }
@@ -349,7 +385,7 @@ void main() {
     // if (!shutdown_clean) {
     //     print_line_scroll("WARNING: System was not shut down properly.", 0, &row, 0x0C);
     // }
-    print_line_scroll("CawOS v0.3.4", 0, &row, 0x0B);
+    print_line_scroll("CawOS v0.3.5", 0, &row, 0x0B);
     print_line_scroll("Type 'help' to see all commands.", 0, &row, 0x0F);
     row++; 
     enable_cursor(13, 15);

@@ -6,7 +6,7 @@
 
 #define START_MENU_WIDTH    200
 #define START_MENU_HEIGHT   250
-#define MENU_ITEM_HEIGHT    20
+#define MENU_ITEM_HEIGHT    22
 #define MENU_ICON_SIZE      16
 #define MENU_TEXT_OFFSET    28
 
@@ -46,5 +46,7 @@ void menu_run_find(void);
 void menu_run_help(void);
 void menu_run_run(void);
 void menu_shutdown(void);
+void menu_logoff(void);
+void menu_run_explorer(void);
 
 #endif

@@ -15,7 +15,8 @@ qemu-system-i386 ^
     -vga std ^
     -serial stdio ^
     -audiodev driver=dsound,id=snd0 ^
-    -device ac97,audiodev=snd0
+    -device ac97,audiodev=snd0 ^
+    -rtc base=localtime
 
 if %errorlevel% neq 0 (
     echo [ERROR] QEMU failed to start. Check if it is installed and in your PATH.

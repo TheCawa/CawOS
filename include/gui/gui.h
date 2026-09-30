@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define TASKBAR_HEIGHT      22
+#define TASKBAR_HEIGHT      24
 #define START_BUTTON_WIDTH  80
 #define COLOR_DESKTOP_BG    0x00191920
 #define COLOR_TASKBAR_BG    0x00808080
@@ -20,6 +20,13 @@ typedef struct {
 } button_t;
 
 extern button_t start_button;
+extern int gui_clip_enabled;
+extern int gui_clip_x0, gui_clip_y0, gui_clip_x1, gui_clip_y1;
+
+static inline int gui_in_clip(int x, int y) {
+    if (!gui_clip_enabled) return 1;
+    return x >= gui_clip_x0 && x < gui_clip_x1 && y >= gui_clip_y0 && y < gui_clip_y1;
+}
 
 void taskbar_init(void);
 void taskbar_draw(void);

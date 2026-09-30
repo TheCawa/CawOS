@@ -50,10 +50,6 @@ void cmd_cp(char* args, int* row) {
             break;
         }
     }
-    if (strcmp(source, "boot_sound_cawos") == 0 ||
-        strcmp(dest, "boot_sound_cawos") == 0) {
-        return;
-    }
     uint32_t size = fs_get_size(source);
     uint8_t* buffer = (uint8_t*)malloc(size > 0 ? size : 1);
     if (!buffer) {

@@ -89,13 +89,11 @@ static void edit_clamp_cursor(editor_t* e) {
 static void edit_ensure_cursor_visible(editor_t* e) {
     int line = edit_get_line_of(e, e->cursor);
     int col = edit_get_col_in_line(e, e->cursor);
-
     if (line < e->top_line) {
         e->top_line = line;
     } else if (line >= e->top_line + e->edit_rows) {
         e->top_line = line - e->edit_rows + 1;
     }
-
     if (col < e->col_offset) {
         e->col_offset = col;
     } else if (col >= e->col_offset + e->edit_cols) {
@@ -147,7 +145,6 @@ static void edit_split_line(editor_t* e) {
 static void edit_move_cursor(editor_t* e, int dx, int dy) {
     int line = edit_get_line_of(e, e->cursor);
     int col = edit_get_col_in_line(e, e->cursor);
-
     if (dy != 0) {
         int target_line = line + dy;
         int line_count = edit_get_line_count(e);
@@ -159,7 +156,6 @@ static void edit_move_cursor(editor_t* e, int dx, int dy) {
     } else if (dx != 0) {
         e->cursor += dx;
     }
-
     edit_clamp_cursor(e);
     edit_ensure_cursor_visible(e);
 }
@@ -182,7 +178,6 @@ static int edit_load(editor_t* e) {
     e->col_offset = 0;
     e->modified = 0;
     e->buffer[0] = '\0';
-
     uint32_t size = fs_get_size(e->filename);
     if (size == 0) {
         if (fs_exists(e->filename)) {
@@ -192,12 +187,10 @@ static int edit_load(editor_t* e) {
         }
         return 1;
     }
-
     if (size >= EDIT_BUF_SIZE) {
         edit_set_status(e, "File too large!");
         return 0;
     }
-
     uint32_t sectors = (size / 512) + 1;
     uint32_t buffer_size = sectors * 512;
     uint8_t* temp = (uint8_t*)malloc(buffer_size);
@@ -205,7 +198,6 @@ static int edit_load(editor_t* e) {
         edit_set_status(e, "Out of memory!");
         return 0;
     }
-
     int ok = fs_load_to_memory(e->filename, temp);
     if (ok) {
         memcpy(e->buffer, temp, size);
@@ -215,7 +207,6 @@ static int edit_load(editor_t* e) {
     } else {
         edit_set_status(e, "Load failed!");
     }
-
     free(temp);
     return ok;
 }
@@ -228,7 +219,6 @@ static int edit_save(editor_t* e) {
             return 0;
         }
     }
-
     if (fs_write(e->filename, (uint8_t*)e->buffer, e->len)) {
         e->modified = 0;
         edit_set_status(e, "Saved");
@@ -253,17 +243,14 @@ static void edit_draw_vline(int row, int col, int height, unsigned char color) {
 
 static void edit_draw_frame(editor_t* e) {
     unsigned char frame_color = 0x0B;
-
     print_char_at('+', 0, 0, frame_color);
     print_char_at('+', 0, e->screen_cols - 1, frame_color);
     print_char_at('+', e->screen_rows - 2, 0, frame_color);
     print_char_at('+', e->screen_rows - 2, e->screen_cols - 1, frame_color);
-
     edit_draw_hline(0, 1, e->screen_cols - 2, frame_color);
     edit_draw_hline(e->screen_rows - 2, 1, e->screen_cols - 2, frame_color);
     edit_draw_vline(1, 0, e->screen_rows - 3, frame_color);
     edit_draw_vline(1, e->screen_cols - 1, e->screen_rows - 3, frame_color);
-
     char title[64];
     snprintf(title, sizeof(title), " Edit: %s ", e->filename);
     int title_len = strlen(title);
@@ -280,18 +267,15 @@ static void edit_draw_status(editor_t* e) {
     int col = edit_get_col_in_line(e, e->cursor) + 1;
     itoa(line, line_str);
     itoa(col, col_str);
-
     const char* msg = e->status_msg;
     if (system_ticks > e->status_msg_timeout) {
         msg = "";
     }
-
     snprintf(status, sizeof(status),
-        " %s | L:%s C:%s | %s | Ctrl+S=Save Esc=Exit ",
-        e->modified ? "MODIFIED" : "SAVED",
-        line_str, col_str,
-        msg);
-
+             " %s | L:%s C:%s | %s | Ctrl+S=Save Esc=Exit ",
+             e->modified ? "MODIFIED" : "SAVED",
+             line_str, col_str,
+             msg);
     int status_len = strlen(status);
     for (int i = 0; i < e->screen_cols; i++) {
         print_char_at(' ', e->screen_rows - 1, i, status_color);
@@ -300,54 +284,71 @@ static void edit_draw_status(editor_t* e) {
     print_at_color(status, e->screen_rows - 1, 0, status_color);
 }
 
-static void edit_draw_content(editor_t* e) {
+static void edit_draw_line(editor_t* e, int screen_row) {
     int line_count = edit_get_line_count(e);
     int cursor_line = edit_get_line_of(e, e->cursor);
-    int cursor_col = edit_get_col_in_line(e, e->cursor);
+    int cursor_col  = edit_get_col_in_line(e, e->cursor);
+    int draw_row = screen_row + 1;
 
-    for (int screen_row = 0; screen_row < e->edit_rows; screen_row++) {
-        int file_line = e->top_line + screen_row;
-        int draw_row = screen_row + 1;
-
-        for (int col = 0; col < e->edit_cols; col++) {
-            print_char_at(' ', draw_row, col + 1, 0x0F);
-        }
-
-        if (file_line >= line_count) {
-            if (e->cursor_visible && file_line == cursor_line) {
-                int cursor_screen_col = cursor_col - e->col_offset;
-                if (cursor_screen_col >= 0 && cursor_screen_col < e->edit_cols) {
-                    print_char_at(' ', draw_row, cursor_screen_col + 1, 0xF0);
-                }
-            }
-            continue;
-        }
-
-        int line_start = edit_get_line_start(e, file_line);
-        int line_len = edit_get_line_len(e, file_line);
-
-        int draw_len = line_len - e->col_offset;
-        if (draw_len < 0) draw_len = 0;
-        if (draw_len > e->edit_cols) draw_len = e->edit_cols;
-
-        for (int i = 0; i < draw_len; i++) {
-            char c = e->buffer[line_start + e->col_offset + i];
-            if (c == '\t') c = ' ';
-            unsigned char color = 0x0F;
-            if (e->cursor_visible && file_line == cursor_line &&
-                (e->col_offset + i) == cursor_col) {
-                color = 0xF0;
-            }
-            print_char_at(c, draw_row, i + 1, color);
-        }
-
-        if (e->cursor_visible && file_line == cursor_line &&
-            cursor_col >= e->col_offset + draw_len &&
-            cursor_col - e->col_offset < e->edit_cols) {
-            int cursor_screen_col = cursor_col - e->col_offset;
-            print_char_at(' ', draw_row, cursor_screen_col + 1, 0xF0);
-        }
+    for (int col = 0; col < e->edit_cols; col++) {
+        print_char_at(' ', draw_row, col + 1, 0x0F);
     }
+
+    int file_line = e->top_line + screen_row;
+    if (file_line >= line_count) {
+        if (file_line == cursor_line) {
+            int sc = cursor_col - e->col_offset;
+            if (sc >= 0 && sc < e->edit_cols && e->cursor_visible)
+                print_char_at(' ', draw_row, sc + 1, 0xF0);
+        }
+        return;
+    }
+
+    int line_start = edit_get_line_start(e, file_line);
+    int line_len   = edit_get_line_len(e, file_line);
+    int draw_len = line_len - e->col_offset;
+    if (draw_len < 0) draw_len = 0;
+    if (draw_len > e->edit_cols) draw_len = e->edit_cols;
+
+    for (int i = 0; i < draw_len; i++) {
+        char c = e->buffer[line_start + e->col_offset + i];
+        if (c == '\t') c = ' ';
+        unsigned char color = 0x0F;
+        if (e->cursor_visible && file_line == cursor_line &&
+            (e->col_offset + i) == cursor_col) {
+            color = 0xF0;
+        }
+        print_char_at(c, draw_row, i + 1, color);
+    }
+
+    if (e->cursor_visible && file_line == cursor_line &&
+        cursor_col >= e->col_offset + draw_len &&
+        cursor_col - e->col_offset < e->edit_cols) {
+        int sc = cursor_col - e->col_offset;
+        print_char_at(' ', draw_row, sc + 1, 0xF0);
+    }
+}
+
+static void edit_draw_content(editor_t* e) {
+    for (int i = 0; i < e->edit_rows; i++) {
+        edit_draw_line(e, i);
+    }
+}
+
+static void edit_toggle_cursor_only(editor_t* e) {
+    int line = edit_get_line_of(e, e->cursor);
+    int col  = edit_get_col_in_line(e, e->cursor);
+    int screen_row = line - e->top_line;
+    if (screen_row < 0 || screen_row >= e->edit_rows) return;
+    int sc = col - e->col_offset;
+    if (sc < 0 || sc >= e->edit_cols) return;
+
+    int draw_row = screen_row + 1;
+    char c = (line < edit_get_line_count(e) && col < edit_get_line_len(e, line))
+             ? e->buffer[edit_get_line_start(e, line) + col] : ' ';
+    if (c == '\t') c = ' ';
+    unsigned char color = e->cursor_visible ? 0xF0 : 0x0F;
+    print_char_at(c, draw_row, sc + 1, color);
 }
 
 static void edit_draw(editor_t* e) {
@@ -359,13 +360,10 @@ static void edit_draw(editor_t* e) {
 
 static int edit_confirm_exit(editor_t* e) {
     if (!e->modified) return 1;
-
     int row = e->screen_rows / 2;
     int col = (e->screen_cols - 30) / 2;
     if (col < 0) col = 0;
-
     print_at_color(" File modified. Save? [Y/N/C] ", row, col, 0x4F);
-
     while (1) {
         __asm__ volatile("hlt");
         if (key_queue_head != key_queue_tail) {
@@ -387,12 +385,10 @@ static int edit_confirm_exit(editor_t* e) {
 
 void cmd_edit(char* args, int* row) {
     (void)row;
-
     if (!args || args[0] == '\0') {
         print_line_scroll("Usage: edit <filename>", 0, row, 0x0C);
         return;
     }
-
     if (strlen(args) >= EDIT_FILENAME_MAX) {
         print_line_scroll("Error: Filename too long!", 0, row, 0x0C);
         return;
@@ -400,15 +396,12 @@ void cmd_edit(char* args, int* row) {
 
     memset(&g_editor, 0, sizeof(g_editor));
     safe_strcpy(g_editor.filename, args, sizeof(g_editor.filename));
-
     g_editor.screen_rows = screen_get_rows();
     g_editor.screen_cols = screen_get_cols();
-
     if (g_editor.screen_rows < 6 || g_editor.screen_cols < 20) {
         print_line_scroll("Error: Screen too small for editor!", 0, row, 0x0C);
         return;
     }
-
     g_editor.edit_rows = g_editor.screen_rows - 3;
     g_editor.edit_cols = g_editor.screen_cols - 2;
 
@@ -430,13 +423,14 @@ void cmd_edit(char* args, int* row) {
         if (system_ticks - g_editor.last_cursor_tick >= EDIT_CURSOR_BLINK_MS / 10) {
             g_editor.cursor_visible = !g_editor.cursor_visible;
             g_editor.last_cursor_tick = system_ticks;
-            redraw_content = 1;
+            edit_toggle_cursor_only(&g_editor);
         }
 
         if (redraw_content) {
             edit_draw_content(&g_editor);
             redraw_content = 0;
         }
+
         if (redraw_status) {
             edit_draw_status(&g_editor);
             redraw_status = 0;
@@ -492,36 +486,60 @@ void cmd_edit(char* args, int* row) {
         }
 
         int need_full_redraw = 0;
+        int need_line_redraw = 0;
+        int prev_line = edit_get_line_of(&g_editor, g_editor.cursor);
+        int prev_top_line = g_editor.top_line;
+        int prev_col_offset = g_editor.col_offset;
 
         if (scancode == BACKSPACE) {
             edit_delete_char(&g_editor);
             edit_ensure_cursor_visible(&g_editor);
-            need_full_redraw = 1;
+            int line = edit_get_line_of(&g_editor, g_editor.cursor);
+            int line_start = edit_get_line_start(&g_editor, line);
+            if (g_editor.cursor == line_start && line > 0) {
+                need_full_redraw = 1;
+            } else {
+                need_line_redraw = 1;
+            }
         } else if (scancode == ENTER) {
             edit_split_line(&g_editor);
             edit_ensure_cursor_visible(&g_editor);
             need_full_redraw = 1;
         } else if (scancode == ARROW_UP) {
             edit_move_cursor(&g_editor, 0, -1);
+            int cursor_line = edit_get_line_of(&g_editor, g_editor.cursor);
+            if (cursor_line >= g_editor.top_line && cursor_line < g_editor.top_line + g_editor.edit_rows)
+                need_line_redraw = 1;
+            else
+                need_full_redraw = 1;
         } else if (scancode == ARROW_DOWN) {
             edit_move_cursor(&g_editor, 0, 1);
+            int cursor_line = edit_get_line_of(&g_editor, g_editor.cursor);
+            if (cursor_line >= g_editor.top_line && cursor_line < g_editor.top_line + g_editor.edit_rows)
+                need_line_redraw = 1;
+            else
+                need_full_redraw = 1;
         } else if (scancode == ARROW_LEFT) {
             edit_move_cursor(&g_editor, -1, 0);
+            need_line_redraw = 1;
         } else if (scancode == ARROW_RIGHT) {
             edit_move_cursor(&g_editor, 1, 0);
-        } else if (scancode == 0x47) { // Home
+            need_line_redraw = 1;
+        } else if (scancode == 0x47) { /* Home */
             edit_move_home(&g_editor);
-        } else if (scancode == 0x4F) { // End
+            need_line_redraw = 1;
+        } else if (scancode == 0x4F) { /* End */
             edit_move_end(&g_editor);
-        } else if (scancode == 0x49) { // Page Up
+            need_line_redraw = 1;
+        } else if (scancode == 0x49) { /* PgUp */
             g_editor.top_line -= g_editor.edit_rows;
             if (g_editor.top_line < 0) g_editor.top_line = 0;
             edit_ensure_cursor_visible(&g_editor);
             need_full_redraw = 1;
-        } else if (scancode == 0x51) { // Page Down
-            int line_count = edit_get_line_count(&g_editor);
+        } else if (scancode == 0x51) { /* PgDn */
+            int lc = edit_get_line_count(&g_editor);
             g_editor.top_line += g_editor.edit_rows;
-            if (g_editor.top_line >= line_count) g_editor.top_line = line_count - 1;
+            if (g_editor.top_line >= lc) g_editor.top_line = lc - 1;
             if (g_editor.top_line < 0) g_editor.top_line = 0;
             edit_ensure_cursor_visible(&g_editor);
             need_full_redraw = 1;
@@ -537,15 +555,32 @@ void cmd_edit(char* args, int* row) {
             if (key >= 32 && key <= 126) {
                 edit_insert_char(&g_editor, key);
                 edit_ensure_cursor_visible(&g_editor);
-                need_full_redraw = 1;
+                need_line_redraw = 1;
             }
         }
 
-        if (need_full_redraw) {
-            edit_draw_content(&g_editor);
+        int cursor_line = edit_get_line_of(&g_editor, g_editor.cursor);
+        int cursor_screen_row = cursor_line - g_editor.top_line;
+        int view_changed = (g_editor.top_line != prev_top_line) ||
+                           (g_editor.col_offset != prev_col_offset);
+
+        if (need_full_redraw || view_changed) {
             g_editor.cursor_visible = 1;
             g_editor.last_cursor_tick = system_ticks;
+            edit_draw_content(&g_editor);
+        } else if (need_line_redraw) {
+            int prev_row = prev_line - g_editor.top_line;
+            g_editor.cursor_visible = 1;
+            g_editor.last_cursor_tick = system_ticks;
+            if (prev_row != cursor_screen_row &&
+                prev_row >= 0 && prev_row < g_editor.edit_rows) {
+                edit_draw_line(&g_editor, prev_row);
+            }
+            if (cursor_screen_row >= 0 && cursor_screen_row < g_editor.edit_rows) {
+                edit_draw_line(&g_editor, cursor_screen_row);
+            }
         }
+
         redraw_status = 1;
     }
 

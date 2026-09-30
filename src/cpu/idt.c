@@ -132,34 +132,71 @@ static void print_stack_frame_to_screen(int row, int idx, uint32_t eip) {
     print_at_color(line, row, 3, 0x1F);
 }
 
+static const char* bsod_exception_name(int no) {
+    switch (no) {
+        case 0:  return "DIVIDE BY ZERO (#DE)";
+        case 1:  return "DEBUG (#DB)";
+        case 2:  return "NON-MASKABLE INTERRUPT";
+        case 3:  return "BREAKPOINT (#BP)";
+        case 4:  return "OVERFLOW (#OF)";
+        case 5:  return "BOUND RANGE EXCEEDED (#BR)";
+        case 6:  return "INVALID OPCODE (#UD)";
+        case 7:  return "DEVICE NOT AVAILABLE (#NM)";
+        case 8:  return "DOUBLE FAULT (#DF)";
+        case 9:  return "COPROCESSOR SEGMENT OVERRUN";
+        case 10: return "INVALID TSS (#TS)";
+        case 11: return "SEGMENT NOT PRESENT (#NP)";
+        case 12: return "STACK-SEGMENT FAULT (#SS)";
+        case 13: return "GENERAL PROTECTION FAULT (#GP)";
+        case 14: return "PAGE FAULT (#PF)";
+        case 15: return "RESERVED EXCEPTION (15)";
+        case 16: return "x87 FPU ERROR (#MF)";
+        case 17: return "ALIGNMENT CHECK (#AC)";
+        case 18: return "MACHINE CHECK (#MC)";
+        case 19: return "SIMD FLOAT-POINT EXCEPTION (#XM)";
+        case 20: return "VIRTUALIZATION EXCEPTION (#VE)";
+        case 21: return "CONTROL PROTECTION EXCEPTION (#CP)";
+        case 30: return "SECURITY EXCEPTION (#SX)";
+        default: return "UNKNOWN EXCEPTION";
+    }
+}
+
+static int bsod_has_error_code(int no) {
+    return no == 8 || no == 10 || no == 11 || no == 12 || no == 13 ||
+           no == 14 || no == 17 || no == 21 || no == 30;
+}
+
 void draw_bsod(const char* error_name, struct registers *r) {
     char hex_buf[11];
     int is_gfx = g_is_graphics;
-    int rows = is_gfx ? screen_get_rows() : 25;
     int cols = is_gfx ? screen_get_cols() : 80;
+    int rows = is_gfx ? screen_get_rows() : 25;
     unsigned char speaker_state = port_byte_in(0x61);
     port_byte_out(0x61, speaker_state & 0xFC);
     disable_cursor();
     if (!is_gfx) {
         char* vm = (char*)0xb8000;
         for (int i = 0; i < 80 * 25 * 2; i += 2) {
-            vm[i] = ' '; vm[i+1] = 0x1F;
+            vm[i] = ' '; vm[i + 1] = 0x1F;
         }
     } else {
+        screen_set_font_scale(3, 2);
+        cols = screen_get_cols();
+        rows = screen_get_rows();
         uint32_t blue = 0x000000AA;
         for (uint32_t y = 0; y < g_height; y++) {
-            uint8_t* row = g_shadow + y * g_pitch;
+            uint8_t* rowpx = g_shadow + y * g_pitch;
             for (uint32_t x = 0; x < g_width; x++) {
-                uint8_t* pixel = row + x * (g_bpp / 8);
-                uint8_t r = (blue >> 16) & 0xFF;
-                uint8_t g = (blue >> 8)  & 0xFF;
-                uint8_t b = (blue)       & 0xFF;
+                uint8_t* pixel = rowpx + x * (g_bpp / 8);
+                uint8_t rr = (blue >> 16) & 0xFF;
+                uint8_t gg = (blue >> 8)  & 0xFF;
+                uint8_t bb = (blue)       & 0xFF;
                 if (g_bpp == 32) {
-                    pixel[0] = b; pixel[1] = g; pixel[2] = r; pixel[3] = 0;
+                    pixel[0] = bb; pixel[1] = gg; pixel[2] = rr; pixel[3] = 0;
                 } else if (g_bpp == 24) {
-                    pixel[0] = b; pixel[1] = g; pixel[2] = r;
+                    pixel[0] = bb; pixel[1] = gg; pixel[2] = rr;
                 } else if (g_bpp == 16) {
-                    uint16_t c16 = ((r>>3)<<11) | ((g>>2)<<5) | (b>>3);
+                    uint16_t c16 = ((rr >> 3) << 11) | ((gg >> 2) << 5) | (bb >> 3);
                     pixel[0] = c16 & 0xFF;
                     pixel[1] = c16 >> 8;
                 }
@@ -167,87 +204,63 @@ void draw_bsod(const char* error_name, struct registers *r) {
         }
         memcpy(g_framebuffer, g_shadow, g_height * g_pitch);
     }
-    int title_row = is_gfx ? 2 : 1;
-    int msg1_row = is_gfx ? 6 : 4;
-    int msg2_row = is_gfx ? 8 : 5;
-    int err_label_row = is_gfx ? 11 : 7;
-    int err_name_row = is_gfx ? 11 : 7;
-    int line1_row = is_gfx ? 14 : 9;
-    int regs_label_row = is_gfx ? 16 : 10;
-    int eip_label_row = is_gfx ? 19 : 12;
-    int eip_val_row = is_gfx ? 19 : 12;
-    int cs_label_row = is_gfx ? 19 : 12;
-    int cs_val_row = is_gfx ? 19 : 12;
-    int eax_label_row = is_gfx ? 22 : 14;
-    int eax_val_row = is_gfx ? 22 : 14;
-    int ebx_label_row = is_gfx ? 22 : 14;
-    int ebx_val_row = is_gfx ? 22 : 14;
-    int ecx_label_row = is_gfx ? 24 : 15;
-    int ecx_val_row = is_gfx ? 24 : 15;
-    int edx_label_row = is_gfx ? 24 : 15;
-    int edx_val_row = is_gfx ? 24 : 15;
-    int esp_label_row = is_gfx ? 27 : 17;
-    int esp_val_row = is_gfx ? 27 : 17;
-    int ebp_label_row = is_gfx ? 27 : 17;
-    int ebp_val_row = is_gfx ? 27 : 17;
-    int line2_row = is_gfx ? 30 : 19;
-    int restart_row = is_gfx ? 40 : 21;
+    int row = 1;
     int mid = cols / 2 - 12;
-    print_at_color(" [ CawOS System Error ] ", title_row, mid, 0x1F);
-    print_at_color("A fatal exception has occurred. The system has been halted", msg1_row, 3, 0x1F);
-    print_at_color("to prevent damage to your computer.", msg2_row, 3, 0x1F);
-    print_at_color("Error Type:", err_label_row, 3, 0x1F);
-    print_at_color(error_name, err_name_row, 15, 0x1E);
-    print_at_color("-----------------------------------------------", line1_row, 3, 0x1F);
-    print_at_color("REGS DUMP:", regs_label_row, 3, 0x1F);
-    print_at_color("EIP:", eip_label_row, 3, 0x1F);
-    int_to_hex(r->eip, hex_buf);
-    print_at_color(hex_buf, eip_val_row, 8, 0x1F);
-    print_at_color("CS:", cs_label_row, 22, 0x1F);
-    int_to_hex(r->cs, hex_buf);
-    print_at_color(hex_buf, cs_val_row, 26, 0x1F);
-    print_at_color("EAX:", eax_label_row, 3, 0x1F);
-    int_to_hex(r->eax, hex_buf);
-    print_at_color(hex_buf, eax_val_row, 8, 0x1F);
-    print_at_color("EBX:", ebx_label_row, 22, 0x1F);
-    int_to_hex(r->ebx, hex_buf);
-    print_at_color(hex_buf, ebx_val_row, 26, 0x1F);
-    print_at_color("ECX:", ecx_label_row, 3, 0x1F);
-    int_to_hex(r->ecx, hex_buf);
-    print_at_color(hex_buf, ecx_val_row, 8, 0x1F);
-    print_at_color("EDX:", edx_label_row, 22, 0x1F);
-    int_to_hex(r->edx, hex_buf);
-    print_at_color(hex_buf, edx_val_row, 26, 0x1F);
-    print_at_color("ESP:", esp_label_row, 3, 0x1F);
-    int_to_hex(r->kernel_esp, hex_buf);
-    print_at_color(hex_buf, esp_val_row, 8, 0x1F);
-    print_at_color("EBP:", ebp_label_row, 22, 0x1F);
-    int_to_hex(r->ebp, hex_buf);
-    print_at_color(hex_buf, ebp_val_row, 26, 0x1F);
-
-    int cr2_row = ebp_label_row + 1;
-    if (r->int_no == 14) {
-        uint32_t cr2;
-        __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
-        print_at_color("CR2:", cr2_row, 3, 0x1F);
-        int_to_hex(cr2, hex_buf);
-        print_at_color(hex_buf, cr2_row, 8, 0x1F);
+    if (mid < 0) mid = 0;
+    #define BPRINT(text, col, color) do { \
+        if (row < rows) print_at_color((text), row, (col), (color)); \
+    } while (0)
+    #define BNEXT() do { row++; } while (0)
+    BPRINT(" [ CawOS System Error ] ", mid, 0x1F); BNEXT(); BNEXT();
+    BPRINT("A fatal exception has occurred. The system has been halted", 3, 0x1F); BNEXT();
+    BPRINT("to prevent damage to your computer.", 3, 0x1F); BNEXT(); BNEXT();
+    BPRINT("Error Type:", 3, 0x1F);
+    BPRINT(error_name, 15, 0x1E); BNEXT();
+    BPRINT("-----------------------------------------------", 3, 0x1F); BNEXT();
+    BPRINT("REGS DUMP:", 3, 0x1F); BNEXT();
+    BPRINT("EIP:", 3, 0x1F); int_to_hex(r->eip, hex_buf); BPRINT(hex_buf, 8, 0x1F);
+    BPRINT("CS:", 22, 0x1F); int_to_hex(r->cs, hex_buf);  BPRINT(hex_buf, 26, 0x1F); BNEXT();
+    BPRINT("EAX:", 3, 0x1F); int_to_hex(r->eax, hex_buf); BPRINT(hex_buf, 8, 0x1F);
+    BPRINT("EBX:", 22, 0x1F); int_to_hex(r->ebx, hex_buf); BPRINT(hex_buf, 26, 0x1F); BNEXT();
+    BPRINT("ECX:", 3, 0x1F); int_to_hex(r->ecx, hex_buf); BPRINT(hex_buf, 8, 0x1F);
+    BPRINT("EDX:", 22, 0x1F); int_to_hex(r->edx, hex_buf); BPRINT(hex_buf, 26, 0x1F); BNEXT();
+    BPRINT("ESP:", 3, 0x1F); int_to_hex(r->kernel_esp, hex_buf); BPRINT(hex_buf, 8, 0x1F);
+    BPRINT("EBP:", 22, 0x1F); int_to_hex(r->ebp, hex_buf); BPRINT(hex_buf, 26, 0x1F); BNEXT();
+    if (bsod_has_error_code(r->int_no) || r->int_no == 14) {
+        if (bsod_has_error_code(r->int_no)) {
+            BPRINT("ERR CODE:", 3, 0x1F);
+            int_to_hex(r->err_code, hex_buf); BPRINT(hex_buf, 13, 0x1F);
+        }
+        if (r->int_no == 14) {
+            uint32_t cr2;
+            __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+            BPRINT("CR2:", 22, 0x1F);
+            int_to_hex(cr2, hex_buf); BPRINT(hex_buf, 27, 0x1F);
+        }
+        BNEXT();
     }
-
-    bsod_serial_dump(error_name, r);
-
-    int trace_label_row = line2_row + 1;
-    int trace_start_row = line2_row + 2;
-    print_at_color("Stack trace:", trace_label_row, 3, 0x1F);
+    BPRINT("-----------------------------------------------", 3, 0x1F); BNEXT();
+    BPRINT("Stack trace:", 3, 0x1F); BNEXT();
+    int trace_start = row;
+    int reserve = 3;
+    int max_frames = rows - trace_start - reserve;
+    if (max_frames > MAX_STACK_FRAMES) max_frames = MAX_STACK_FRAMES;
+    if (max_frames < 0) max_frames = 0;
     uint32_t ebp = r->ebp;
-    for (int i = 0; i < MAX_STACK_FRAMES && is_valid_frame_ptr(ebp); i++) {
+    int shown = 0;
+    for (int i = 0; i < max_frames && is_valid_frame_ptr(ebp); i++) {
         uint32_t* frame = (uint32_t*)ebp;
-        print_stack_frame_to_screen(trace_start_row + i, i, frame[1]);
+        print_stack_frame_to_screen(trace_start + i, i, frame[1]);
         ebp = frame[0];
+        shown++;
     }
-
-    print_at_color("-----------------------------------------------", line2_row, 3, 0x1F);
-    print_at_color("Please restart your computer.", restart_row, 3, 0x1F);
+    row = trace_start + shown;
+    BPRINT("-----------------------------------------------", 3, 0x1F); BNEXT(); BNEXT();
+    if (row > rows - 1) row = rows - 1;
+    BPRINT("Please restart your computer.", 3, 0x1F);
+    #undef BPRINT
+    #undef BNEXT
+    bsod_serial_dump(error_name, r);
 }
 
 __attribute__((force_align_arg_pointer))
@@ -545,14 +558,7 @@ void isr_handler(struct registers *r) {
         port_byte_out(0x20, 0x20);
         return;
     }
-    char* err_desc;
-    switch (r->int_no) {
-        case 0:  err_desc = "DIVIDE BY ZERO"; break;
-        case 13: err_desc = "GENERAL PROTECTION FAULT"; break;
-        case 14: err_desc = "PAGE FAULT"; break;
-        default: err_desc = "UNKNOWN EXCEPTION"; break;
-    }
-    draw_bsod(err_desc, r);
+    draw_bsod(bsod_exception_name(r->int_no), r);
     __asm__ volatile("cli; hlt");
 }
 

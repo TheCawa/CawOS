@@ -5,6 +5,7 @@
 #include "kernel/idt.h"
 #include "drivers/ata.h"
 #include "kernel/memory.h"
+#include "libc/logger.h"
 
 file_t fs[MAX_FILES];
 uint16_t cawfat[MAX_CLUSTERS];
@@ -20,10 +21,7 @@ static void fs_write_sector(uint32_t lba, uint8_t* buf) {
         bios_write_sector(lba, buf);
         pic_init();
         idt_reload();
-        while (port_byte_in(0x64) & 1) {
-            port_byte_in(0x60);
-        }
-        
+        while (port_byte_in(0x64) & 1) port_byte_in(0x60);
         __asm__ volatile("sti");
     }
 }
@@ -54,7 +52,9 @@ static int find_free_cluster() {
 static void free_cluster_chain(uint16_t start_cluster) {
     if (start_cluster == CLUSTER_EOF || start_cluster == 0) return;
     uint16_t current = start_cluster;
-    while (current != CLUSTER_EOF && current < MAX_CLUSTERS) {
+    uint32_t steps = 0;
+    while (current != CLUSTER_EOF && current != 0 && current < MAX_CLUSTERS) {
+        if (++steps > MAX_CLUSTERS) break;
         uint16_t next = cawfat[current];
         cawfat[current] = CLUSTER_EMPTY;
         current = next;
@@ -66,8 +66,12 @@ void fs_flush() {
     memset(fs_io_buf, 0, FS_TABLE_SECTORS * 512);
     memcpy(fs_io_buf, fs, sizeof(file_t) * MAX_FILES);
     if (fs_use_ata) {
-        ata_write_sectors(0, FS_TABLE_LBA, FS_TABLE_SECTORS, fs_io_buf);
-        ata_write_sectors(0, CAWFAT_LBA, CAWFAT_SECTORS, (uint8_t*)cawfat);
+        for (int i = 0; i < FS_TABLE_SECTORS; i++) {
+            ata_write_sectors(0, FS_TABLE_LBA + i, 1, fs_io_buf + i * 512);
+        }
+        for (int i = 0; i < CAWFAT_SECTORS; i++) {
+            ata_write_sectors(0, CAWFAT_LBA + i, 1, ((uint8_t*)cawfat) + i * 512);
+        }
     } else {
         for (int i = 0; i < FS_TABLE_SECTORS; i++) {
             fs_write_sector(FS_TABLE_LBA + i, fs_io_buf + i * 512);
@@ -92,8 +96,12 @@ void fs_init() {
     if (!fs_io_buf) return;
     memset(fs_io_buf, 0, 512 * FS_TABLE_SECTORS);
     if (fs_use_ata) {
-        ata_read_sectors(0, FS_TABLE_LBA, FS_TABLE_SECTORS, fs_io_buf);
-        ata_read_sectors(0, CAWFAT_LBA, CAWFAT_SECTORS, (uint8_t*)cawfat);
+        for (int i = 0; i < FS_TABLE_SECTORS; i++) {
+            ata_read_sectors(0, FS_TABLE_LBA + i, 1, fs_io_buf + i * 512);
+        }
+        for (int i = 0; i < CAWFAT_SECTORS; i++) {
+            ata_read_sectors(0, CAWFAT_LBA + i, 1, ((uint8_t*)cawfat) + i * 512);
+        }
     } else {
         for (int i = 0; i < FS_TABLE_SECTORS; i++) {
             fs_read_sector(FS_TABLE_LBA + i, fs_io_buf + i * 512);
@@ -103,6 +111,12 @@ void fs_init() {
         }
     }
     memcpy(fs, fs_io_buf, sizeof(file_t) * MAX_FILES);
+        for (int i = 0; i < MAX_CLUSTERS; i++) {
+        if (cawfat[i] != CLUSTER_EMPTY && cawfat[i] != CLUSTER_EOF &&
+            cawfat[i] >= MAX_CLUSTERS) {
+            cawfat[i] = CLUSTER_EOF;
+        }
+    }
 }
 
 int fs_exists(char* name) {
@@ -129,7 +143,6 @@ void fs_list(int* row) {
     int found = 0;
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists && strcmp(fs[i].dir, current_dir) == 0) {
-            if (strcmp(fs[i].name, "boot_sound_cawos") == 0) continue; 
             
             char line[72];
             memset(line, 0, 72);
@@ -155,7 +168,6 @@ void fs_list(int* row) {
 }
 
 int fs_create(char* name, int* row) {
-    if (strcmp(name, "boot_sound_cawos") == 0) return 0;
     if (strlen(name) >= 32) {
         print_line_scroll("Error: Name too long!", 0, row, 0x0C);
         return 0;
@@ -179,7 +191,6 @@ int fs_create(char* name, int* row) {
 }
 
 int fs_mkdir(char* name, int* row) {
-    if (strcmp(name, "boot_sound_cawos") == 0) return 0;
     if (strlen(name) >= 32) {
         print_line_scroll("Error: Name too long!", 0, row, 0x0C);
         return 0;
@@ -203,7 +214,6 @@ int fs_mkdir(char* name, int* row) {
 }
 
 int fs_cd(char* path, int* row) {
-    if (strcmp(path, "boot_sound_cawos") == 0) return 0;
     if (strcmp(path, "/") == 0) {
         memset(current_dir, 0, 32);
         current_dir[0] = '/';
@@ -254,6 +264,68 @@ int fs_cd(char* path, int* row) {
     return 0;
 }
 
+static int fs_split_path(const char* path, char* dir, char* name) {
+    const char* slash = NULL;
+    for (const char* p = path; *p; p++) if (*p == '/') slash = p;
+    if (!slash) return 0;
+    int dlen = (int)(slash - path);
+    if (dlen == 0) strcpy(dir, "/");
+    else {
+        if (dlen > 31) return 0;
+        memcpy(dir, path, dlen);
+        dir[dlen] = '\0';
+    }
+    const char* base = slash + 1;
+    if (*base == '\0' || strlen(base) > 31) return 0;
+    strcpy(name, base);
+    return 1;
+}
+
+uint32_t fs_get_size_abs(const char* path) {
+    char dir[32], name[32];
+    if (!fs_split_path(path, dir, name)) return 0;
+    char saved[32];
+    strcpy(saved, current_dir);
+    if (!fs_cd_abs(dir)) { fs_cd_abs(saved); return 0; }
+    uint32_t sz = fs_get_size(name);
+    fs_cd_abs(saved);
+    return sz;
+}
+
+int fs_load_to_memory_abs(const char* path, uint8_t* address) {
+    char dir[32], name[32];
+    if (!fs_split_path(path, dir, name)) return 0;
+    char saved[32];
+    strcpy(saved, current_dir);
+    if (!fs_cd_abs(dir)) { fs_cd_abs(saved); return 0; }
+    int ok = fs_load_to_memory(name, address);
+    fs_cd_abs(saved);
+    return ok;
+}
+
+static int fs_is_protected_dir_path(const char* abs_path) {
+    return strcmp(abs_path, "/core") == 0 || strncmp(abs_path, "/core/", 6) == 0;
+}
+
+static void fs_abs_path_of(const char* dir, const char* name, char* out, int out_size) {
+    if (strcmp(dir, "/") == 0) {
+        safe_strcpy(out, "/", out_size);
+    } else {
+        safe_strcpy(out, dir, out_size);
+        if ((int)strlen(out) + 1 < out_size) strcat(out, "/");
+    }
+    if ((int)strlen(out) + (int)strlen(name) < out_size) strcat(out, name);
+}
+
+static int fs_entry_is_in_core(const file_t* e) {
+    if (e->is_dir) {
+        char abs[64];
+        fs_abs_path_of(e->dir, e->name, abs, sizeof(abs));
+        return fs_is_protected_dir_path(abs);
+    }
+    return strcmp(e->dir, "/core") == 0 || strncmp(e->dir, "/core/", 6) == 0;
+}
+
 int fs_cd_abs(const char* path) {
     if (path == NULL || strlen(path) >= 32) return 0;
     int dummy_row = 0;
@@ -276,7 +348,6 @@ int fs_cd_abs(const char* path) {
 }
 
 int fs_write(char* name, uint8_t* data, uint32_t len) {
-    if (strcmp(name, "boot_sound_cawos") == 0) return 0;
 
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists && !fs[i].is_dir &&
@@ -322,10 +393,10 @@ int fs_write_file(char* name, uint8_t* data, uint32_t size) {
 }
 
 int fs_delete(char* name) {
-    if (strcmp(name, "boot_sound_cawos") == 0) return 0;
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists && strcmp(fs[i].name, name) == 0 &&
-            strcmp(fs[i].dir, current_dir) == 0) {   
+            strcmp(fs[i].dir, current_dir) == 0) {
+            if (fs_entry_is_in_core(&fs[i])) return 0;
             if (!fs[i].is_dir) {
                 free_cluster_chain(fs[i].first_cluster);
             } else {
@@ -376,26 +447,25 @@ int fs_delete(char* name) {
 
 void fs_format(uint32_t magic) {
     if (magic != 0xCA705) return;
-    file_t boot_backup;
-    int boot_found = 0;
-    for (int i = 0; i < MAX_FILES; i++) {
-        if (fs[i].exists && strcmp(fs[i].name, "boot_sound_cawos") == 0) {
-            memcpy(&boot_backup, &fs[i], sizeof(file_t));
-            boot_found = 1;
-            break;
-        }
-    }
+
+    static file_t keep_buf[64];
     uint8_t protected_map[MAX_CLUSTERS];
     memset(protected_map, 0, MAX_CLUSTERS);
-    if (boot_found && boot_backup.first_cluster != CLUSTER_EOF) {
-        uint16_t curr = boot_backup.first_cluster;
+
+    int keep_count = 0;
+    for (int i = 0; i < MAX_FILES; i++) {
+        if (!fs[i].exists) continue;
+        if (!fs_entry_is_in_core(&fs[i])) continue;
+        if (keep_count < 64) {
+            memcpy(&keep_buf[keep_count++], &fs[i], sizeof(file_t));
+        }
+        uint16_t curr = fs[i].first_cluster;
         while (curr != CLUSTER_EOF && curr < MAX_CLUSTERS) {
             protected_map[curr] = 1;
             curr = cawfat[curr];
         }
     }
-    uint8_t zero[512];
-    memset(zero, 0, 512);
+
     for (int i = 0; i < MAX_CLUSTERS; i++) {
         if (!protected_map[i]) {
             cawfat[i] = CLUSTER_EMPTY;
@@ -404,8 +474,8 @@ void fs_format(uint32_t magic) {
     memset(fs, 0, sizeof(file_t) * MAX_FILES);
     memset(current_dir, 0, 32);
     current_dir[0] = '/';
-    if (boot_found) {
-        fs[0] = boot_backup;
+    for (int i = 0; i < keep_count; i++) {
+        fs[i] = keep_buf[i];
     }
     fs_flush();
 }
@@ -417,6 +487,7 @@ int fs_rename(char* old_name, char* new_name) {
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists && strcmp(fs[i].name, old_name) == 0 &&
             strcmp(fs[i].dir, current_dir) == 0) {
+            if (fs_entry_is_in_core(&fs[i])) return 0;
             strcpy(fs[i].name, new_name);
             fs_flush();
             return 1;

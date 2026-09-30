@@ -9,11 +9,11 @@ static menu_item_t menu_items[] = {
     { "Documents",   MENU_ITEM_SUBMENU,   0x00FF8000, menu_run_documents },
     { "Settings",    MENU_ITEM_SUBMENU,   0x00808080, menu_run_settings },
     { "Find",        MENU_ITEM_SUBMENU,   0x0000FF00, menu_run_find },
-    { NULL,          MENU_ITEM_SEPARATOR, 0,          NULL },
+    { "Explorer",    MENU_ITEM_NORMAL,    0x00FF80FF, menu_run_explorer },
     { "Help",        MENU_ITEM_NORMAL,    0x00FFFF00, menu_run_help },
     { "Run...",      MENU_ITEM_NORMAL,    0x00FFFFFF, menu_run_run },
-    { NULL,          MENU_ITEM_SEPARATOR, 0,          NULL },
-    { "Shut Down...",MENU_ITEM_NORMAL,    0x00FF0000, menu_shutdown },
+    { "Log Off",       MENU_ITEM_NORMAL,    0x00FF00FF, menu_logoff },
+    { "Shutdown...",  MENU_ITEM_NORMAL,    0x00FF0000, menu_shutdown },
 };
 #define MENU_ITEM_COUNT (sizeof(menu_items) / sizeof(menu_items[0]))
 
@@ -46,6 +46,7 @@ static void draw_icon(int x, int y, uint32_t color) {
         for (int dx = 0; dx < MENU_ICON_SIZE; dx++) {
             int px = x + dx, py = y + dy;
             if (px >= 0 && px < (int)g_width && py >= 0 && py < (int)g_height) {
+                if (!gui_in_clip(x, y)) return;
                 uint32_t off = py * g_pitch + px * bpp;
                 if (bpp == 4) {
                     *((uint32_t*)(g_shadow + off)) = color;
@@ -67,7 +68,6 @@ static void draw_icon(int x, int y, uint32_t color) {
 }
 
 static void menu_draw_text(const char* text, int x, int y, uint32_t color) {
-    extern unsigned char font8x8_basic[128][8];
     uint32_t bpp = g_bpp / 8;
     int tx = x;
     for (int i = 0; text[i]; i++) {
@@ -78,6 +78,7 @@ static void menu_draw_text(const char* text, int x, int y, uint32_t color) {
             for (int col = 0; col < 8; col++) {
                 int px = tx + col, py = y + row;
                 if (px >= 0 && px < (int)g_width && py >= 0 && py < (int)g_height) {
+                    if (!gui_in_clip(x, y)) return;
                     if (line & (0x80 >> col)) {
                         uint32_t off = py * g_pitch + px * bpp;
                         if (bpp == 4) {
@@ -103,17 +104,26 @@ static void menu_draw_text(const char* text, int x, int y, uint32_t color) {
 }
 
 static void draw_separator(int x, int y, int width) {
-    uint32_t bpp = g_bpp / 8;
     uint32_t dark = 0x00808080;
     uint32_t light = 0x00FFFFFF;
-    
     for (int dx = 4; dx < width - 4; dx++) {
-        int px = x + dx;
-        uint32_t off1 = y * g_pitch + px * bpp;
-        if (bpp == 4) *((uint32_t*)(g_shadow + off1)) = dark;
-        uint32_t off2 = (y + 1) * g_pitch + px * bpp;
-        if (bpp == 4) *((uint32_t*)(g_shadow + off2)) = light;
+        set_pixel_menu(x + dx, y, dark);
+        set_pixel_menu(x + dx, y + 1, light);
     }
+}
+
+static int menu_item_at_rel(int rel_y) {
+    if (rel_y < 0) return -1;
+    int current_y = 0;
+    for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+        int h = (menu_items[i].type == MENU_ITEM_SEPARATOR) ? 12 : MENU_ITEM_HEIGHT;
+        if (rel_y < current_y + h) {
+            if (menu_items[i].type == MENU_ITEM_SEPARATOR) return -1;
+            return i;
+        }
+        current_y += h;
+    }
+    return -1;
 }
 
 void start_menu_init(void) {
@@ -257,9 +267,11 @@ void start_menu_draw(int x, int y) {
         uint32_t text_color = (menu_items[i].type == MENU_ITEM_DISABLED) ? 
                               COLOR_MENU_GRAY : 
                               (i == hovered_item ? 0x00FFFFFF : COLOR_MENU_TEXT);
-        menu_draw_text(menu_items[i].text, item_x + 20, item_y + 6, text_color);
+        menu_draw_text(menu_items[i].text, item_x + 20,
+                       item_y + (MENU_ITEM_HEIGHT - font_height()) / 2, text_color);
         if (menu_items[i].type == MENU_ITEM_SUBMENU) {
-            menu_draw_text(">>", item_x + START_MENU_WIDTH - 44, item_y + 6, text_color);
+            menu_draw_text(">>", item_x + START_MENU_WIDTH - 44,
+                           item_y + (MENU_ITEM_HEIGHT - font_height()) / 2, text_color);
         }
         item_y += MENU_ITEM_HEIGHT;
     }
@@ -267,47 +279,18 @@ void start_menu_draw(int x, int y) {
 
 void start_menu_handle_click(int x, int y) {
     if (!start_menu_hit_test(x, y)) return;
-    int rel_y = y - menu_y - 4;
-    int item_idx = rel_y / MENU_ITEM_HEIGHT;
-    int actual_idx = 0;
-    int current_y = 0;
-    for (int i = 0; i < MENU_ITEM_COUNT && actual_idx <= item_idx; i++) {
-        if (menu_items[i].type == MENU_ITEM_SEPARATOR) {
-            current_y += 12;
-            continue;
-        }
-        if (current_y / MENU_ITEM_HEIGHT == item_idx) {
-            if (menu_items[i].callback && menu_items[i].type != MENU_ITEM_SEPARATOR) {
-                menu_items[i].callback();
-            }
-            return;
-        }
-        current_y += MENU_ITEM_HEIGHT;
-        actual_idx++;
+    int idx = menu_item_at_rel(y - menu_y - 4);
+    if (idx < 0) return;
+    if (menu_items[idx].type == MENU_ITEM_DISABLED) return;
+    if (menu_items[idx].callback) {
+        menu_items[idx].callback();
     }
 }
 
 void start_menu_handle_hover(int x, int y) {
-    int old_hover = hovered_item;
     hovered_item = -1;
     if (start_menu_hit_test(x, y)) {
-        int rel_y = y - menu_y - 4;
-        int item_idx = rel_y / MENU_ITEM_HEIGHT;
-        
-        int current_y = 0;
-        for (int i = 0; i < MENU_ITEM_COUNT; i++) {
-            if (menu_items[i].type == MENU_ITEM_SEPARATOR) {
-                current_y += 12;
-                continue;
-            }
-            if (current_y / MENU_ITEM_HEIGHT == item_idx) {
-                hovered_item = i;
-                break;
-            }
-            current_y += MENU_ITEM_HEIGHT;
-        }
-    }
-    if (old_hover != hovered_item) {
+        hovered_item = menu_item_at_rel(y - menu_y - 4);
     }
 }
 
@@ -342,4 +325,13 @@ void menu_run_run(void) {
 
 void menu_shutdown(void) {
     g_desktop_exit_requested = 1;
+}
+
+void menu_logoff(void) {
+    g_desktop_exit_reason = 1;
+    g_desktop_exit_requested = 1;
+}
+
+void menu_run_explorer(void) {
+    execute_program("explorer");
 }

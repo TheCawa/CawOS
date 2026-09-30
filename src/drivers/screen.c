@@ -22,13 +22,17 @@ static uint32_t last_cursor_tick = 0;
 int cursor_row = -1, cursor_col = -1;
 static int cursor_drawn = 0;
 uint8_t* g_shadow = 0;
-uint32_t g_char_w = 12;
-uint32_t g_char_h = 14;
-uint32_t g_scale_x_num = 3;
-uint32_t g_scale_x_den = 2;
-uint32_t g_scale_y_num = 7;
-uint32_t g_scale_y_den = 4;
-uint32_t g_char_gap_y = 2; // (14 / 7 = 2)
+uint32_t g_char_w = 8;
+uint32_t g_char_h = 16;
+uint32_t g_font_scale = 1;
+uint32_t g_char_gap_y = 2;
+uint32_t g_scale_num = 1;
+uint32_t g_scale_den = 1;
+static const font_t* push_saved_font = NULL;
+static uint32_t push_saved_w, push_saved_h, push_saved_gap;
+static uint32_t push_saved_cols, push_saved_rows;
+static uint32_t push_saved_num, push_saved_den;
+static int push_active = 0;
 
 unsigned char current_color = 0x0F;
 static const char spinner_chars[] = {'|', '/', '-', '\\'};
@@ -53,6 +57,12 @@ void screen_init_graphics(uint32_t framebuffer, uint32_t width, uint32_t height,
     g_height = (height > 0) ? height : 768;
     g_pitch  = (pitch  > 0) ? pitch  : (g_width * 4);
     g_bpp = *((volatile uint32_t*)0x0530);
+    g_font_scale = 1;
+    g_char_w = 8;
+    g_char_h = 16;
+    g_char_gap_y = 2;
+    g_cols = g_width / g_char_w;
+    g_rows = g_height / (g_char_h + g_char_gap_y);
     if (g_bpp == 0) g_bpp = 32;
     size_t buffer_size = g_height * g_pitch;
     g_shadow = (uint8_t*)malloc(buffer_size);
@@ -88,6 +98,31 @@ static void gfx_flush_char(int col, int row) {
     }
 }
 
+void screen_push_font(font_t* f, uint32_t gap) {
+    if (!g_is_graphics || push_active) return;
+    push_saved_font = font_get_current();
+    push_saved_w = g_char_w; push_saved_h = g_char_h; push_saved_gap = g_char_gap_y;
+    push_saved_cols = g_cols; push_saved_rows = g_rows;
+    push_saved_num = g_scale_num; push_saved_den = g_scale_den;
+    push_active = 1;
+    font_set_current(f);
+    g_scale_num = 1; g_scale_den = 1;
+    g_char_w = f->width;
+    g_char_h = f->height;
+    g_char_gap_y = gap;
+    g_cols = g_width / g_char_w;
+    g_rows = g_height / (g_char_h + g_char_gap_y);
+}
+
+void screen_pop_font(void) {
+    if (!push_active) return;
+    font_set_current((font_t*)push_saved_font);
+    g_char_w = push_saved_w; g_char_h = push_saved_h; g_char_gap_y = push_saved_gap;
+    g_cols = push_saved_cols; g_rows = push_saved_rows;
+    g_scale_num = push_saved_num; g_scale_den = push_saved_den;
+    push_active = 0;
+}
+
 void gfx_putpixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= g_width || y >= g_height) return;
     uint32_t offset = y * g_pitch + x * (g_bpp / 8);
@@ -103,28 +138,129 @@ void gfx_putpixel(uint32_t x, uint32_t y, uint32_t color) {
     }
 }
 
-void gfx_draw_char(char c, int x, int y, uint32_t fg, uint32_t bg) {
-    if (!g_framebuffer) return;
-    unsigned char* font_row = font8x8_basic[(unsigned char)c];
-    int dst_y = y;
-    for (int dy = 0; dy < 8; dy++) {
-        int row_height = (dy % g_scale_y_den < (g_scale_y_num % g_scale_y_den)) ? 
-                         (g_scale_y_num / g_scale_y_den + 1) : (g_scale_y_num / g_scale_y_den);
-        if (row_height == 0) row_height = 1;
-        int dst_x = x;
-        for (int dx = 0; dx < 8; dx++) {
-            uint32_t px_color = (font_row[dy] & (1 << (7 - dx))) ? fg : bg;
-            int col_width = (dx % g_scale_x_den < (g_scale_x_num % g_scale_x_den)) ? 
-                            (g_scale_x_num / g_scale_x_den + 1) : (g_scale_x_num / g_scale_x_den);
-            if (col_width == 0) col_width = 1;
-            for (int sy = 0; sy < row_height; sy++) {
-                for (int sx = 0; sx < col_width; sx++) {
-                    gfx_putpixel(dst_x + sx, dst_y + sy, px_color);
+void gfx_fill_rect_px(int x, int y, int w, int h, uint32_t color) {
+    for (int dy = 0; dy < h; dy++)
+        for (int dx = 0; dx < w; dx++)
+            gfx_putpixel((uint32_t)(x + dx), (uint32_t)(y + dy), color);
+}
+
+void screen_flip_rect(int x, int y, int w, int h) {
+    if (!g_is_graphics || !g_framebuffer) return;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x >= (int)g_width || y >= (int)g_height) return;
+    if (x + w > (int)g_width)  w = (int)g_width  - x;
+    if (y + h > (int)g_height) h = (int)g_height - y;
+    uint32_t bpp = g_bpp / 8;
+    for (int row = 0; row < h; row++) {
+        memcpy(g_framebuffer + (uint32_t)(y + row) * g_pitch + (uint32_t)x * bpp,
+               g_shadow      + (uint32_t)(y + row) * g_pitch + (uint32_t)x * bpp,
+               (uint32_t)w * bpp);
+    }
+}
+
+void gfx_draw_char_ex(char c, int x, int y, uint32_t fg, uint32_t bg,
+                      const font_t* f, uint32_t num, uint32_t den) {
+    if (!g_framebuffer || !f) return;
+    if (den == 0) den = 1;
+    if (num == 0) num = 1;
+    unsigned char uc = (unsigned char)c;
+    if (uc >= f->num_glyphs) uc = '?';
+    const uint8_t* glyph = f->glyphs + (uint32_t)uc * f->height;
+    int dst_h = (int)(((uint32_t)f->height * num + den - 1) / den);
+    int dst_w = (int)(((uint32_t)f->width  * num + den - 1) / den);
+    int up_y = (num >= den);
+    int up_x = (num >= den);
+
+    for (int ty = 0; ty < dst_h; ty++) {
+        uint8_t combined;
+        if (up_y) {
+            int sy = (int)((uint32_t)ty * den / num);
+            if (sy >= (int)f->height) sy = (int)f->height - 1;
+            combined = glyph[sy];
+        } else {
+            int sy0 = (int)((uint32_t)ty * den / num);
+            int sy1 = (int)((((uint32_t)ty + 1) * den + num - 1) / num);
+            if (sy1 <= sy0) sy1 = sy0 + 1;
+            combined = 0;
+            for (int sy = sy0; sy < sy1 && sy < (int)f->height; sy++) combined |= glyph[sy];
+        }
+        for (int tx = 0; tx < dst_w; tx++) {
+            int bit;
+            if (up_x) {
+                int sx = (int)((uint32_t)tx * den / num);
+                if (sx >= (int)f->width) sx = (int)f->width - 1;
+                bit = (combined >> (7 - sx)) & 1;
+            } else {
+                int sx0 = (int)((uint32_t)tx * den / num);
+                int sx1 = (int)((((uint32_t)tx + 1) * den + num - 1) / num);
+                if (sx1 <= sx0) sx1 = sx0 + 1;
+                bit = 0;
+                for (int sx = sx0; sx < sx1 && sx < (int)f->width; sx++) {
+                    if (combined & (0x80 >> sx)) { bit = 1; break; }
                 }
             }
-            dst_x += col_width;
+            gfx_putpixel(x + tx, y + ty, bit ? fg : bg);
         }
-        dst_y += row_height;
+    }
+}
+
+void gfx_draw_char_px(char c, int px, int py, uint32_t fg, uint32_t bg,
+                      const font_t* f, uint32_t scale) {
+    gfx_draw_char_ex(c, px, py, fg, bg, f, scale, 1);
+}
+
+void gfx_draw_char(char c, int x, int y, uint32_t fg, uint32_t bg) {
+    gfx_draw_char_ex(c, x, y, fg, bg, font_get_current(), g_scale_num, g_scale_den);
+}
+
+static void gfx_draw_char_xy(char c, int x, int y, uint32_t fg, uint32_t bg,
+                             const font_t* f,
+                             uint32_t num_x, uint32_t den_x,
+                             uint32_t num_y, uint32_t den_y) {
+    if (!g_framebuffer || !f) return;
+    if (den_x == 0) den_x = 1;
+    if (den_y == 0) den_y = 1;
+    if (num_x == 0) num_x = 1;
+    if (num_y == 0) num_y = 1;
+    unsigned char uc = (unsigned char)c;
+    if (uc >= f->num_glyphs) uc = '?';
+    const uint8_t* glyph = f->glyphs + (uint32_t)uc * f->height;
+    int dst_h = (int)(((uint32_t)f->height * num_y + den_y - 1) / den_y);
+    int dst_w = (int)(((uint32_t)f->width  * num_x + den_x - 1) / den_x);
+    int up_y = (num_y >= den_y);
+    int up_x = (num_x >= den_x);
+
+    for (int ty = 0; ty < dst_h; ty++) {
+        uint8_t combined;
+        if (up_y) {
+            int sy = (int)((uint32_t)ty * den_y / num_y);
+            if (sy >= (int)f->height) sy = (int)f->height - 1;
+            combined = glyph[sy];
+        } else {
+            int sy0 = (int)((uint32_t)ty * den_y / num_y);
+            int sy1 = (int)((((uint32_t)ty + 1) * den_y + num_y - 1) / num_y);
+            if (sy1 <= sy0) sy1 = sy0 + 1;
+            combined = 0;
+            for (int sy = sy0; sy < sy1 && sy < (int)f->height; sy++) combined |= glyph[sy];
+        }
+        for (int tx = 0; tx < dst_w; tx++) {
+            int bit;
+            if (up_x) {
+                int sx = (int)((uint32_t)tx * den_x / num_x);
+                if (sx >= (int)f->width) sx = (int)f->width - 1;
+                bit = (combined >> (7 - sx)) & 1;
+            } else {
+                int sx0 = (int)((uint32_t)tx * den_x / num_x);
+                int sx1 = (int)((((uint32_t)tx + 1) * den_x + num_x - 1) / num_x);
+                if (sx1 <= sx0) sx1 = sx0 + 1;
+                bit = 0;
+                for (int sx = sx0; sx < sx1 && sx < (int)f->width; sx++) {
+                    if (combined & (0x80 >> sx)) { bit = 1; break; }
+                }
+            }
+            gfx_putpixel((uint32_t)(x + tx), (uint32_t)(y + ty), bit ? fg : bg);
+        }
     }
 }
 
@@ -188,21 +324,20 @@ void gfx_toggle_cursor(int row, int col, int draw) {
     int x = col * g_char_w;
     int y = row * (g_char_h + g_char_gap_y);
     int cursor_height = 2;
-    int cursor_y = y + g_char_h + g_char_gap_y - cursor_height;
+    int cursor_y = y + g_char_h;
+    
     for (int cy = 0; cy < cursor_height; cy++) {
-        for (int cx = 0; cx < g_char_w; cx++) {
+        for (int cx = 0; cx < (int)g_char_w; cx++) {
             int px = x + cx;
             int py = cursor_y + cy;
             if (px >= 0 && px < (int)g_width && py >= 0 && py < (int)g_height) {
                 uint8_t* pixel = g_framebuffer + py * g_pitch + px * (g_bpp / 8);
-                if (draw) {
-                    if (g_bpp == 32) { pixel[0] ^= 0xFF; pixel[1] ^= 0xFF; pixel[2] ^= 0xFF; }
-                    else if (g_bpp == 24) { pixel[0] ^= 0xFF; pixel[1] ^= 0xFF; pixel[2] ^= 0xFF; }
-                    else if (g_bpp == 16) { pixel[0] ^= 0xFF; pixel[1] ^= 0xFF; }
-                } else {
-                    if (g_bpp == 32) { pixel[0] = 0; pixel[1] = 0; pixel[2] = 0; pixel[3] = 0; }
-                    else if (g_bpp == 24) { pixel[0] = 0; pixel[1] = 0; pixel[2] = 0; }
-                    else if (g_bpp == 16) { pixel[0] = 0; pixel[1] = 0; }
+                if (g_bpp == 32) {
+                    pixel[0] ^= 0xFF; pixel[1] ^= 0xFF; pixel[2] ^= 0xFF;
+                } else if (g_bpp == 24) {
+                    pixel[0] ^= 0xFF; pixel[1] ^= 0xFF; pixel[2] ^= 0xFF;
+                } else if (g_bpp == 16) {
+                    pixel[0] ^= 0xFF; pixel[1] ^= 0xFF;
                 }
             }
         }
@@ -227,26 +362,86 @@ void update_cursor(int row, int col) {
     if (cursor_visible) { gfx_toggle_cursor(cursor_row, cursor_col, 1); cursor_drawn = 1; }
 }
 
-void draw_logo() {
+void draw_logo(void) {
     clear_screen();
-    int rows = screen_get_rows(); int cols = screen_get_cols();
-    const int LOGO_WIDTH = 75; const int LOGO_HEIGHT = 5;
-    int start_col = (cols - LOGO_WIDTH) / 2 + LOGO_OFFSET_X;
-    int start_row = (rows - LOGO_HEIGHT - 5) / 2;
-    if (start_col < 2) start_col = 2; if (start_row < 2) start_row = 2;
-    unsigned char color = 0x0B;
-    print_at_color("  ______      ______      __     __      ______      ______   ", start_row,     start_col, color);
-    print_at_color(" /\\  ___\\    /\\  __ \\    /\\ \\  _ \\ \\    /\\  __ \\    /\\  ___\\  ", start_row+1, start_col, color);
-    print_at_color(" \\ \\ \\____   \\ \\  __ \\   \\ \\ \\/ \".\\ \\   \\ \\ \\/\\ \\   \\ \\___  \\ ", start_row+2, start_col, color);
-    print_at_color("  \\ \\_____\\   \\ \\_\\ \\_\\   \\ \\__/\".~\\_\\   \\ \\_____\\   \\/\\_____\\", start_row+3, start_col, color);
-    print_at_color("   \\/_____/    \\/_/\\/_/    \\/_/   \\/_/    \\/_____/    \\/_____/", start_row+4, start_col, color);
-    print_at_color(">> CawOS is loading your dreams... <<", start_row+7, start_col + 18, 0x0E);
-    int spinner_row = start_row + 10; int spinner_col = cols / 2;
+    if (!g_is_graphics) {
+        static const char* art[5] = {
+            "  ______      ______      __     __      ______      ______   ",
+            " /\\  ___\\    /\\  __ \\    /\\ \\  _ \\ \\    /\\  __ \\    /\\  ___\\  ",
+            " \\ \\ \\____   \\ \\  __ \\   \\ \\ \\/ \".\\ \\   \\ \\ \\/\\ \\   \\ \\___  \\ ",
+            "  \\ \\_____\\   \\ \\_\\ \\_\\   \\ \\__/\".~\\_\\   \\ \\_____\\   \\/\\_____\\",
+            "   \\/_____/    \\/_/\\/_/    \\/_/   \\/_/    \\/_____/    \\/_____/"
+        };
+        for (int r = 0; r < 25; r++)
+            for (int c = 0; c < 80; c++)
+                print_char_at(' ', r, c, 0x00);
+        int art_cols = (int)strlen(art[0]);
+        int x0 = (80 - art_cols) / 2;
+        int y0 = (25 - 5) / 2 - 2;
+        if (x0 < 0) x0 = 0;
+        if (y0 < 0) y0 = 0;
+        for (int r = 0; r < 5; r++)
+            print_at_color(art[r], y0 + r, x0, 0x0B);
+        const char* tag = ">> CawOS is loading your dreams... <<";
+        int tx = (80 - (int)strlen(tag)) / 2;
+        int ty = y0 + 5 + 1;
+        print_at_color(tag, ty, tx, 0x0E);
+        int sx = 40, sy = ty + 2;
+        for (int i = 0; i < 20; i++) {
+            char c = spinner_chars[i % 4];
+            char buf[2] = { c, 0 };
+            print_at_color(buf, sy, sx, 0x0F);
+            sleep_ms(100);
+            print_at_color(" ", sy, sx, 0x00);
+        }
+        return;
+    }
+    const font_t* f = font_get_8x8();
+    const uint32_t nx = 3, dx = 2;
+    const uint32_t ny = 2, dy = 1;
+    const int cell_w = (int)((8 * nx + dx - 1) / dx);
+    const int cell_h = (int)((8 * ny + dy - 1) / dy);
+
+    uint32_t fg = vga_to_rgb(0x0B);
+    uint32_t bg = vga_to_rgb(0x00);
+    static const char* art[5] = {
+        "  ______      ______      __     __      ______      ______   ",
+        " /\\  ___\\    /\\  __ \\    /\\ \\  _ \\ \\    /\\  __ \\    /\\  ___\\  ",
+        " \\ \\ \\____   \\ \\  __ \\   \\ \\ \\/ \".\\ \\   \\ \\ \\/\\ \\   \\ \\___  \\ ",
+        "  \\ \\_____\\   \\ \\_\\ \\_\\   \\ \\__/\".~\\_\\   \\ \\_____\\   \\/\\_____\\",
+        "   \\/_____/    \\/_/\\/_/    \\/_/   \\/_/    \\/_____/    \\/_____/"
+    };
+    int art_cols = (int)strlen(art[0]);
+    int x0 = ((int)g_width - art_cols * cell_w) / 2;
+    int y0 = ((int)g_height - 5 * cell_h) / 2 - cell_h;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+
+    for (int r = 0; r < 5; r++) {
+        for (int c = 0; art[r][c]; c++) {
+            gfx_draw_char_xy(art[r][c], x0 + c * cell_w, y0 + r * cell_h,
+                             fg, bg, f, nx, dx, ny, dy);
+        }
+    }
+
+    const char* tag = ">> CawOS is loading your dreams... <<";
+    int tx = ((int)g_width - (int)strlen(tag) * cell_w) / 2;
+    int ty = y0 + 5 * cell_h + cell_h / 2;
+    for (int c = 0; tag[c]; c++) {
+        gfx_draw_char_xy(tag[c], tx + c * cell_w, ty,
+                         vga_to_rgb(0x0E), bg, f, nx, dx, ny, dy);
+    }
+    screen_flip_rect(0, 0, (int)g_width, (int)g_height);
+
+    int sx = (int)g_width / 2;
+    int sy = ty + cell_h * 2;
     for (int i = 0; i < 20; i++) {
         char c = spinner_chars[i % 4];
-        print_char_at(c, spinner_row, spinner_col, 0x0F);
+        gfx_draw_char_xy(c, sx, sy, vga_to_rgb(0x0F), bg, f, nx, dx, ny, dy);
+        screen_flip_rect(sx, sy, cell_w, cell_h);
         sleep_ms(100);
-        print_char_at(' ', spinner_row, spinner_col, 0x0F);
+        gfx_draw_char_xy(' ', sx, sy, vga_to_rgb(0x0F), bg, f, nx, dx, ny, dy);
+        screen_flip_rect(sx, sy, cell_w, cell_h);
     }
 }
 
@@ -321,27 +516,18 @@ void print_line_scroll(const char* msg, int col, int* row, unsigned char color) 
     (*row)++;
 }
 
-void screen_set_font_scale(uint32_t scale_x_num, uint32_t scale_x_den, uint32_t scale_y_num, uint32_t scale_y_den) {
+void screen_set_font_scale(uint32_t num, uint32_t den) {
     if (!g_is_graphics) return;
-    if (scale_x_den == 0 || scale_y_den == 0) return;
-    g_scale_x_num = scale_x_num;
-    g_scale_x_den = scale_x_den;
-    g_scale_y_num = scale_y_num;
-    g_scale_y_den = scale_y_den;
-    uint32_t new_w = 0;
-    for (int dx = 0; dx < 8; dx++) {
-        new_w += (dx % g_scale_x_den < (g_scale_x_num % g_scale_x_den)) ? 
-                 (g_scale_x_num / g_scale_x_den + 1) : (g_scale_x_num / g_scale_x_den);
-    }
-    g_char_w = (new_w > 0) ? new_w : 8;
-    uint32_t new_h = 0;
-    for (int dy = 0; dy < 8; dy++) {
-        new_h += (dy % g_scale_y_den < (g_scale_y_num % g_scale_y_den)) ? 
-                 (g_scale_y_num / g_scale_y_den + 1) : (g_scale_y_num / g_scale_y_den);
-    }
-    g_char_h = (new_h > 0) ? new_h : 8;
-    g_char_gap_y = g_char_h / 7;
-    if (g_char_gap_y == 0) g_char_gap_y = 1;
+    if (den == 0) den = 1;
+    if (num == 0) num = 1;
+    g_scale_num = num;
+    g_scale_den = den;
+    const font_t* f = font_get_current();
+    g_char_w = ((uint32_t)f->width  * num + den - 1) / den;
+    g_char_h = ((uint32_t)f->height * num + den - 1) / den;
+    if (g_char_w == 0) g_char_w = 1;
+    if (g_char_h == 0) g_char_h = 1;
+    g_char_gap_y = (g_char_h / f->height) / 2;
     g_cols = g_width  / g_char_w;
     g_rows = g_height / (g_char_h + g_char_gap_y);
     cursor_row = 0;

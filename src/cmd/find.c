@@ -105,7 +105,6 @@ void cmd_find(char* args, int* row) {
     print_line_scroll(header, 0, row, 0x0E);
     for (int i = 0; i < MAX_FILES; i++) {
         if (!fs[i].exists) continue;
-        if (strcmp(fs[i].name, "boot_sound_cawos") == 0) continue;
         if (only_dirs && !fs[i].is_dir) continue;
         if (only_files && fs[i].is_dir) continue;
         if (pattern[0] != '\0') {

@@ -31,63 +31,8 @@ static bool screen_output = true;
 static log_level_t min_level = LOG_DEBUG;
 static int log_screen_row = 0;
 
-static int log_vsnprintf(char* buf, int size, const char* fmt, va_list args) {
-    int i = 0;
-    while (*fmt && i < size - 1) {
-        if (*fmt == '%') {
-            fmt++;
-            switch (*fmt) {
-                case 's': {
-                    char* str = va_arg(args, char*);
-                    if (str) {
-                        while (*str && i < size - 1) buf[i++] = *str++;
-                    }
-                    break;
-                }
-                case 'd': {
-                    int num = va_arg(args, int);
-                    char numbuf[12];
-                    itoa(num, numbuf);
-                    for (int j = 0; numbuf[j] && i < size - 1; j++) buf[i++] = numbuf[j];
-                    break;
-                }
-                case 'x': {
-                    unsigned int num = va_arg(args, unsigned int);
-                    char hex[] = "0123456789abcdef";
-                    char tmp[9] = {0};
-                    for (int j = 7; j >= 0; j--) {
-                        tmp[j] = hex[num & 0xF];
-                        num >>= 4;
-                    }
-                    int start = 0;
-                    while (start < 7 && tmp[start] == '0') start++;
-                    for (int j = start; tmp[j] && i < size - 1; j++) buf[i++] = tmp[j];
-                    break;
-                }
-                case 'c': {
-                    buf[i++] = (char)va_arg(args, int);
-                    break;
-                }
-                case '%':
-                    buf[i++] = '%';
-                    break;
-                default:
-                    buf[i++] = '%';
-                    if (*fmt) buf[i++] = *fmt;
-                    break;
-            }
-        } else {
-            buf[i++] = *fmt;
-        }
-        fmt++;
-    }
-    buf[i] = '\0';
-    return i;
-}
-
 void logger_init(void) {
     serial_init(SERIAL_COM1);
-    screen_set_font_scale(1, 1, 1, 1);
     memset(log_buffer, 0, sizeof(log_buffer));
     log_write_idx = 0;
     log_count = 0;
@@ -134,7 +79,7 @@ void log_print(log_level_t level, const char* module, const char* fmt, ...) {
     }
     va_list args;
     va_start(args, fmt);
-    log_vsnprintf(buffer + pos, LOG_MAX_MSG_LEN - pos, fmt, args);
+    vsnprintf(buffer + pos, LOG_MAX_MSG_LEN - pos, fmt, args);
     va_end(args);
     int idx = log_write_idx % LOG_BUFFER_SIZE;
     log_buffer[idx].level = level;
@@ -153,5 +98,33 @@ void log_print(log_level_t level, const char* module, const char* fmt, ...) {
             log_screen_row = max_rows - 1;
         }
         print_line_scroll(buffer, 0, &log_screen_row, color);
+    }
+}
+
+void log_dump_hex(log_level_t level, const char* module, const void* data, uint32_t len) {
+    if (level < min_level) return;
+    const uint8_t* bytes = (const uint8_t*)data;
+    char line[80];
+    for (uint32_t off = 0; off < len; off += 16) {
+        int pos = 0;
+        snprintf(line + pos, sizeof(line) - pos, "%08x: ", off);
+        pos = strlen(line);
+        for (int j = 0; j < 16 && (off + j) < len; j++) {
+            snprintf(line + pos, sizeof(line) - pos, "%02x ", bytes[off + j]);
+            pos += 3;
+        }
+        for (int j = (len - off < 16) ? (int)(len - off) : 16; j < 16; j++) {
+            snprintf(line + pos, sizeof(line) - pos, "   ");
+            pos += 3;
+        }
+        snprintf(line + pos, sizeof(line) - pos, " |");
+        pos = strlen(line);
+        for (int j = 0; j < 16 && (off + j) < len; j++) {
+            uint8_t c = bytes[off + j];
+            line[pos++] = (c >= 0x20 && c <= 0x7E) ? c : '.';
+        }
+        line[pos++] = '|';
+        line[pos] = '\0';
+        log_print(level, module, "%s", line);
     }
 }

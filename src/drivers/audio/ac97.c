@@ -45,9 +45,11 @@ static void nam_write16(uint8_t reg, uint16_t val) {
     port_word_out(s_nam_base + reg, val);
 }
 
+/*
 static uint16_t nabm_read8(uint8_t reg) {
     return port_byte_in(s_nabm_base + reg);
 }
+*/
 
 static void nabm_write8(uint8_t reg, uint8_t val) {
     port_byte_out(s_nabm_base + reg, val);

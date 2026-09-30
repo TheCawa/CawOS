@@ -440,6 +440,48 @@ int vsnprintf(char* buf, int size, const char* fmt, va_list args) {
                     for (int j = start; tmp[j] && i < size - 1; j++) buf[i++] = tmp[j];
                     break;
                 }
+                case 'u': {
+                    va_copy(args_copy, args);
+                    unsigned int num = va_arg(args_copy, unsigned int);
+                    va_end(args_copy);
+                    va_arg(args, unsigned int);
+                    char numbuf[12];
+                    unsigned int n = num;
+                    int i = 0;
+                    if (n == 0) {
+                        numbuf[i++] = '0';
+                    } else {
+                        while (n > 0) {
+                            numbuf[i++] = (n % 10) + '0';
+                            n /= 10;
+                        }
+                    }
+                    numbuf[i] = '\0';
+                    for (int j = 0, k = i - 1; j < k; j++, k--) {
+                        char temp = numbuf[j];
+                        numbuf[j] = numbuf[k];
+                        numbuf[k] = temp;
+                    }
+                    for (int j = 0; numbuf[j] && i < size - 1; j++) buf[i++] = numbuf[j];
+                    break;
+                }
+                case 'p': {
+                    va_copy(args_copy, args);
+                    void* ptr = va_arg(args_copy, void*);
+                    va_end(args_copy);
+                    va_arg(args, void*);
+                    unsigned int addr = (unsigned int)(uintptr_t)ptr;
+                    if (i < size - 1) buf[i++] = '0';
+                    if (i < size - 1) buf[i++] = 'x';
+                    char hex[] = "0123456789abcdef";
+                    char tmp[9] = {0};
+                    for (int j = 7; j >= 0; j--) {
+                        tmp[j] = hex[addr & 0xF];
+                        addr >>= 4;
+                    }
+                    for (int j = 0; j < 8 && i < size - 1; j++) buf[i++] = tmp[j];
+                    break;
+                }
                 case 'c': {
                     va_copy(args_copy, args);
                     char c = (char)va_arg(args_copy, int);

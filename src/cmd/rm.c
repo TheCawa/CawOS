@@ -45,10 +45,11 @@ void cmd_rm(char* args, int* row) {
     enable_cursor(13, 15);
 
     if (confirmed) {
-        if (fs_delete(args)) {
+        int deleted = fs_delete(args);
+        if (deleted) {
             print_line_scroll("File removed.", 0, row, 0x0A);
         } else {
-            print_line_scroll("Error: File not found.", 0, row, 0x0C);
+            print_line_scroll("Error: Permission denied.", 0, row, 0x0C);
         }
     } else {
         print_line_scroll("Aborted.", 0, row, 0x07);

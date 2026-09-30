@@ -3,20 +3,29 @@
 #include "libc/util.h"
 #include "gui/gui.h"
 #include "kernel/memory.h"
+#include "gui/desktop.h"
 
 #define COLOR_TRANSPARENT 0xFFFFFFFF
 #define WIN_ABS(x) ((x) < 0 ? -(x) : (x))
+#define WIN_TASKBTN_W 110
+#define WIN_TASKBTN_X0 (START_BUTTON_WIDTH + 6)
+#define WIN_CLOCK_RESERVE 70
 
 static window_t window_pool[MAX_WINDOWS];
 static int next_window_id = 1;
 static window_t* g_dragged_window = NULL;
 static int g_drag_off_x = 0;
 static int g_drag_off_y = 0;
+static window_t* g_last_click_win = NULL;
+static uint32_t g_last_click_tick = 0;
+static int g_last_click_x = 0, g_last_click_y = 0;
+
 static inline void win_put_pixel_internal(int x, int y, uint32_t color) {
     if (x < 0 || x >= (int)g_width || y < 0 || y >= (int)g_height) return;
     uint32_t bpp = g_bpp / 8;
     uint32_t off = y * g_pitch + x * bpp;
-    
+    if (!gui_in_clip(x, y)) return;
+
     if (bpp == 4) {
         *((uint32_t*)(g_shadow + off)) = color;
     } else if (bpp == 3) {
@@ -40,8 +49,31 @@ static void win_draw_rect(int x, int y, int width, int height, uint32_t color) {
     }
 }
 
+static void focus_window(window_t* win) {
+    for (int j = 0; j < MAX_WINDOWS; j++) window_pool[j].is_focused = 0;
+    if (win) win->is_focused = 1;
+}
+
+static window_t* topmost_visible(void) {
+    for (int i = MAX_WINDOWS - 1; i >= 0; i--) {
+        if (window_pool[i].is_visible && !window_pool[i].is_minimized) return &window_pool[i];
+    }
+    return NULL;
+}
+
+int window_manager_handle_scancode(unsigned char scancode) {
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (window_pool[i].is_visible && window_pool[i].is_focused) {
+            if (window_pool[i].handle_scancode) {
+                return window_pool[i].handle_scancode(&window_pool[i], scancode);
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
+
 static void win_draw_text(const char* text, int x, int y, uint32_t fg, uint32_t bg) {
-    extern unsigned char font8x8_basic[128][8];
     int tx = x;
     for (int i = 0; text[i]; i++) {
         unsigned char c = text[i];
@@ -90,7 +122,6 @@ void window_draw_text(window_t* win, const char* text, int local_x, int local_y,
     if (!win || !win->is_visible || !text) return;
     int cx, cy, cw, ch;
     window_get_client_rect(win, &cx, &cy, &cw, &ch);
-    extern unsigned char font8x8_basic[128][8];
     int tx = cx + local_x;
     for (int i = 0; text[i]; i++) {
         unsigned char c = text[i];
@@ -157,6 +188,7 @@ window_t* window_create(const char* title, int x, int y, int w, int h, void (*dr
             window_pool[i].height = h;
             window_pool[i].is_visible = 1;
             window_pool[i].is_focused = 1;
+            window_pool[i].is_minimized = 0;
             window_pool[i].draw_content = draw_cb;
             window_pool[i].user_data = NULL;
             strncpy(window_pool[i].title, title, WIN_TITLE_MAX - 1);
@@ -166,6 +198,8 @@ window_t* window_create(const char* title, int x, int y, int w, int h, void (*dr
             }
 
             window_pool[i].handle_key = NULL;
+            window_pool[i].handle_mouse = NULL;
+            window_pool[i].handle_scancode = NULL;
             return &window_pool[i];
         }
     }
@@ -174,12 +208,14 @@ window_t* window_create(const char* title, int x, int y, int w, int h, void (*dr
 
 void window_close(window_t* win) {
     if (win) {
+        int was_focused = win->is_focused;
         if (win->user_data) {
             free(win->user_data);
             win->user_data = NULL;
         }
         win->is_visible = 0;
         win->id = 0;
+        if (was_focused) focus_window(topmost_visible());
     }
 }
 
@@ -192,7 +228,7 @@ static void window_draw_single(window_t* win) {
     win_draw_rect(win->x + win->width - 1, win->y, 1, win->height, COLOR_WIN_BORDER);
     uint32_t title_bg = win->is_focused ? COLOR_WIN_TITLE_ACTIVE : 0x00808080;
     win_draw_rect(win->x + 2, win->y + 2, win->width - 4, WINDOW_TITLEBAR_HEIGHT, title_bg);
-    int text_y = win->y + 2 + (WINDOW_TITLEBAR_HEIGHT - 8) / 2;
+    int text_y = win->y + 2 + (WINDOW_TITLEBAR_HEIGHT - font_height()) / 2 + 2;
     win_draw_text(win->title, win->x + 6, text_y, COLOR_WIN_TITLE_TEXT, COLOR_TRANSPARENT);
     int btn_x = win->x + win->width - WINDOW_CLOSE_BTN_SIZE - 4;
     int btn_y = win->y + 2 + (WINDOW_TITLEBAR_HEIGHT - WINDOW_CLOSE_BTN_SIZE) / 2;
@@ -201,8 +237,8 @@ static void window_draw_single(window_t* win) {
     win_draw_rect(btn_x, btn_y + WINDOW_CLOSE_BTN_SIZE - 1, WINDOW_CLOSE_BTN_SIZE, 1, 0);
     win_draw_rect(btn_x, btn_y, 1, WINDOW_CLOSE_BTN_SIZE, 0);
     win_draw_rect(btn_x + WINDOW_CLOSE_BTN_SIZE - 1, btn_y, 1, WINDOW_CLOSE_BTN_SIZE, 0);
-    int cross_x = btn_x + (WINDOW_CLOSE_BTN_SIZE - 8) / 2;
-    int cross_y = btn_y + (WINDOW_CLOSE_BTN_SIZE - 8) / 2;
+    int cross_x = btn_x + (WINDOW_CLOSE_BTN_SIZE - font_width()) / 2;
+    int cross_y = btn_y + (WINDOW_CLOSE_BTN_SIZE - font_height()) / 2 + 2;
     win_draw_text("x", cross_x, cross_y, 0x00000000, COLOR_TRANSPARENT);
     if (win->draw_content) {
         int client_x = win->x + 2;
@@ -273,16 +309,38 @@ int window_manager_handle_click(int mx, int my) {
         g_drag_off_y = my - win->y;
         return 1; 
     }
+    int cx, cy, cw, chh;
+    window_get_client_rect(win, &cx, &cy, &cw, &chh);
+    extern volatile uint32_t system_ticks;
+    int is_double = 0;
+    if (win == g_last_click_win &&
+        (uint32_t)(system_ticks - g_last_click_tick) <= 40 &&
+        WIN_ABS(mx - g_last_click_x) <= 4 && WIN_ABS(my - g_last_click_y) <= 4) {
+        is_double = 1;
+        g_last_click_win = NULL;
+    } else {
+        g_last_click_win = win;
+        g_last_click_tick = (uint32_t)system_ticks;
+        g_last_click_x = mx;
+        g_last_click_y = my;
+    }
+    if (mx >= cx && mx < cx + cw && my >= cy && my < cy + chh && win->handle_mouse) {
+        win->handle_mouse(win, mx - cx, my - cy, is_double);
+    }
     return 1;
 }
 
 void window_manager_handle_move(int mx, int my) {
     if (g_dragged_window) {
+        desktop_damage_rect(g_dragged_window->x, g_dragged_window->y,
+                            g_dragged_window->width, g_dragged_window->height);
         g_dragged_window->x = mx - g_drag_off_x;
         g_dragged_window->y = my - g_drag_off_y;
         if (g_dragged_window->y < TASKBAR_HEIGHT) {
             g_dragged_window->y = TASKBAR_HEIGHT;
         }
+        desktop_damage_rect(g_dragged_window->x, g_dragged_window->y,
+                            g_dragged_window->width, g_dragged_window->height);
     }
 }
 
@@ -300,6 +358,91 @@ int window_manager_handle_key(char ascii) {
             }
             break; 
         }
+    }
+    return 0;
+}
+
+window_t* window_get_focused(void) {
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (window_pool[i].is_visible && window_pool[i].is_focused) return &window_pool[i];
+    }
+    return NULL;
+}
+
+void window_minimize(window_t* win) {
+    if (!win) return;
+    win->is_minimized = 1;
+    if (win->is_focused) focus_window(topmost_visible());
+}
+
+void window_restore(window_t* win) {
+    if (!win) return;
+    win->is_minimized = 0;
+    focus_window(win);
+}
+
+static int taskbar_slot_rect(int slot, int* x, int* y, int* w, int* h) {
+    int avail = (int)g_width - WIN_CLOCK_RESERVE;
+    int max_slots = (avail - WIN_TASKBTN_X0) / (WIN_TASKBTN_W + 4);
+    if (max_slots < 0) max_slots = 0;
+    if (slot >= max_slots) return 0;
+    *x = WIN_TASKBTN_X0 + slot * (WIN_TASKBTN_W + 4);
+    *y = 3;
+    *w = WIN_TASKBTN_W;
+    *h = TASKBAR_HEIGHT - 6;
+    return 1;
+}
+
+void window_manager_draw_taskbar_buttons(void) {
+    int slot = 0;
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (!window_pool[i].is_visible) continue;
+        int x, y, w, h;
+        if (!taskbar_slot_rect(slot, &x, &y, &w, &h)) break;
+
+        int active = window_pool[i].is_focused && !window_pool[i].is_minimized;
+        win_draw_rect(x, y, w, h, active ? COLOR_BUTTON_HOVER : COLOR_BUTTON_BG);
+        win_draw_rect(x, y, w, 1, 0x00FFFFFF);
+        win_draw_rect(x, y + h - 1, w, 1, 0x00404040);
+        win_draw_rect(x, y, 1, h, 0x00FFFFFF);
+        win_draw_rect(x + w - 1, y, 1, h, 0x00404040);
+
+        char tmp[WIN_TITLE_MAX];
+        int max_chars = (w - 12) / font_width();
+        if (max_chars < 3) max_chars = 3;
+        int tl = (int)strlen(window_pool[i].title);
+        if (tl > max_chars) {
+            int keep = max_chars - 2;
+            memcpy(tmp, window_pool[i].title, keep);
+            tmp[keep] = '.'; tmp[keep + 1] = '.'; tmp[keep + 2] = '\0';
+        } else {
+            strcpy(tmp, window_pool[i].title);
+        }
+        win_draw_text(tmp, x + 6, y + (h - font_height()) / 2 + 2,
+              active ? 0x00FFFFFF : 0x00000000, COLOR_TRANSPARENT);
+        slot++;
+    }
+}
+
+int window_manager_handle_taskbar_click(int x, int y) {
+    if (y >= TASKBAR_HEIGHT) return 0;
+    int slot = 0;
+    for (int i = 0; i < MAX_WINDOWS; i++) {
+        if (!window_pool[i].is_visible) continue;
+        int bx, by, bw, bh;
+        if (!taskbar_slot_rect(slot, &bx, &by, &bw, &bh)) break;
+        if (x >= bx && x < bx + bw && y >= by && y < by + bh) {
+            window_t* win = &window_pool[i];
+            if (win->is_minimized) {
+                window_restore(win);
+            } else if (win->is_focused) {
+                window_minimize(win);
+            } else {
+                focus_window(win);
+            }
+            return 1;
+        }
+        slot++;
     }
     return 0;
 }

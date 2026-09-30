@@ -30,10 +30,6 @@ void cmd_cat(char* args, int* row) {
         print_line_scroll("Usage: cat <filename> [page]", 0, row, 0x0E);
         return;
     }
-    if (strcmp(args, "boot_sound_cawos") == 0) {
-        print_line_scroll("Error: File not found.", 0, row, 0x0C);
-        return;
-    }
 
     char args_buf[256];
     safe_strcpy(args_buf, args, sizeof(args_buf));

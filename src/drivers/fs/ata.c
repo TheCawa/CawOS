@@ -94,6 +94,7 @@ ata_status_t ata_read_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, uint8
             *buffer++ = (uint8_t)(data & 0xFF);
             *buffer++ = (uint8_t)((data >> 8) & 0xFF);
         }
+        (void)port_byte_in(io_base + ATA_REG_STATUS);
     }
     return ATA_OK;
 }
@@ -128,11 +129,15 @@ ata_status_t ata_write_sectors(uint8_t dev_id, uint32_t lba, uint8_t count, cons
             data |= (*buffer++ << 8);
             port_word_out(io_base + ATA_REG_DATA, data);
         }
+        (void)port_byte_in(io_base + ATA_REG_STATUS); 
     }
 
     // Сброс кэша
+    if (!ata_wait_busy(io_base)) return ATA_ERR_TIMEOUT;
+    uint8_t st = port_byte_in(io_base + ATA_REG_STATUS);
+    if (st & (ATA_SR_ERR | ATA_SR_DF)) return ATA_ERR_DEVICE;
     port_byte_out(io_base + ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
     ata_wait_busy(io_base);
-
     return ATA_OK;
+
 }

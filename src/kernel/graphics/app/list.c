@@ -34,7 +34,7 @@ void list_launch(const char* args) {
     if (height > 400) {
         height = 400; 
     }
-    window_t* win = window_create("Installed Programs", 50, 50, 200, height, list_draw_cb);
+    window_create("Installed Programs", 50, 50, 200, height, list_draw_cb);
 }
 
 REGISTER_PROGRAM("list", list_launch);

@@ -60,6 +60,8 @@ int fs_rename(char* old_name, char* new_name);
 void fs_format(uint32_t magic);
 int fs_load_to_memory(char* name, uint8_t* address);
 uint32_t fs_get_size(char* name);
+uint32_t fs_get_size_abs(const char* path);
+int fs_load_to_memory_abs(const char* path, uint8_t* address);
 int fs_mkdir(char* name, int* row);
 int fs_cd(char* path, int* row);
 void bios_write_sector(uint32_t lba, uint8_t* data);

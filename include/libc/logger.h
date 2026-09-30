@@ -18,6 +18,7 @@ void logger_init(void);
 void log_print(log_level_t level, const char* module, const char* fmt, ...);
 void logger_enable_screen(bool enable);
 void logger_set_min_level(log_level_t level);
+void log_dump_hex(log_level_t level, const char* module, const void* data, uint32_t len);
 
 typedef struct {
     log_level_t level;

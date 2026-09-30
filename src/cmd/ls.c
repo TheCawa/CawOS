@@ -18,8 +18,7 @@ void cmd_ls(char* args, int* row) {
     int total_entries = 0;
     int total_lines = 0;
     for (int i = 0; i < MAX_FILES; i++) {
-        if (fs[i].exists && strcmp(fs[i].dir, current_dir) == 0 &&
-            strcmp(fs[i].name, "boot_sound_cawos") != 0) {
+        if (fs[i].exists && strcmp(fs[i].dir, current_dir) == 0) {
             total_entries++;
             total_lines += fs[i].is_dir ? 1 : 2;
         }
@@ -43,7 +42,6 @@ void cmd_ls(char* args, int* row) {
     for (int i = 0; i < MAX_FILES && shown < lines_per_page; i++) {
         if (!fs[i].exists) continue;
         if (strcmp(fs[i].dir, current_dir) != 0) continue;
-        if (strcmp(fs[i].name, "boot_sound_cawos") == 0) continue;
         if (cur_line >= skip + lines_per_page) break;
         if (cur_line >= skip) {
             char line[72];
