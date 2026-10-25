@@ -1,6 +1,9 @@
 #include "kernel/config.h"
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/format.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "kernel/memory.h"
 
 #define CONFIG_DIR_CORE "core"

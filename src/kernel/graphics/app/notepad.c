@@ -1,6 +1,5 @@
 #include "gui/window.h"
 #include "gui/programs.h"
-#include "libc/util.h"
 #include "kernel/memory.h"
 
 #define COLOR_TRANSPARENT 0xFFFFFFFF

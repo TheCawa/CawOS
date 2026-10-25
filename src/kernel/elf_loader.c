@@ -1,6 +1,7 @@
 #include "kernel/elf.h"
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 
 #define ELF_LOAD_BUFFER_ADDR 0x00500000

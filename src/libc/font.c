@@ -1,6 +1,5 @@
 #include "libc/font.h"
 #include "fs.h"
-#include "libc/util.h"
 #include "kernel/memory.h"
 
 unsigned char font8x8_basic[128][8] = {

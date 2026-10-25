@@ -1,6 +1,7 @@
 #include "commands.h"
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 #include "kernel/idt.h"
 

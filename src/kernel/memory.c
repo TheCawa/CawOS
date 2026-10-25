@@ -1,5 +1,5 @@
 #include "kernel/memory.h"
-#include "libc/util.h"
+#include "libc/memory.h"
 #include "drivers/screen.h"
 #define HEAP_START 0x00800000
 

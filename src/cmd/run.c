@@ -4,7 +4,8 @@
 #include "kernel/scheduler.h"
 #include "kernel/memory.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/number.h"
+#include "libc/string.h"
 
 extern int syscall_cursor_x;
 extern int syscall_cursor_y;

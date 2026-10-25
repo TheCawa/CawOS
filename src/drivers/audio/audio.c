@@ -1,7 +1,7 @@
 #include "drivers/audio.h"
 #include "drivers/io.h" 
 #include "kernel/idt.h"
-#include "libc/util.h"
+#include "libc/timer.h"
 
 static const float sin_table[] = {
     0.0000f, 0.0245f, 0.0491f, 0.0736f, 0.0980f, 0.1224f, 0.1467f, 0.1710f,

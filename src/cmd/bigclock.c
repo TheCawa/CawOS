@@ -1,10 +1,15 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/interrupt_state.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
+#include "libc/timer.h"
 #include "drivers/screen.h"
 #include "drivers/rtc.h"
 #include "libc/keyboard.h"
 #include "kernel/interrupt.h"
 #include "libc/keyboard_map.h"
+#include <stddef.h>
 
 #define CLOCK_CELL 12
 

@@ -1,6 +1,5 @@
 #include "gui/gui.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
 #include "gui/start_menu.h"
 #include "gui/window.h"
 #include "drivers/rtc.h"

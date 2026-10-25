@@ -2,7 +2,8 @@
 #include "kernel/scheduler.h"
 #include "kernel/elf.h"
 #include "kernel/memory.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 
 #define PROCESS_STACK_SIZE       65536
 #define PROCESS_KERNEL_STACK_SIZE 16384

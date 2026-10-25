@@ -1,5 +1,5 @@
 #include "kernel/gdt.h"
-#include "libc/util.h"
+#include "libc/memory.h"
 
 #define GDT_ENTRIES 8
 

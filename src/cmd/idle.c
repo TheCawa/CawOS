@@ -1,7 +1,10 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 #include "kernel/config.h"
+#include <stddef.h>
 
 extern uint32_t g_idle_timeout_ticks;
 extern int g_idle_enabled;

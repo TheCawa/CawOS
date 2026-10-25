@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
-#include "libc/util.h"
 
 typedef enum {
     LOG_DEBUG = 0,

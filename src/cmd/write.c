@@ -1,6 +1,6 @@
 #include "commands.h"
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 
 void cmd_write(char* args, int* row) {

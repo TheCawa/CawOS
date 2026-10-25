@@ -1,5 +1,8 @@
 #include "kernel/idt.h"
-#include "libc/util.h"
+#include "libc/interrupt_state.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 #include "drivers/serial.h"
 #include "drivers/io.h"
@@ -174,13 +177,15 @@ void draw_bsod(const char* error_name, struct registers *r) {
     unsigned char speaker_state = port_byte_in(0x61);
     port_byte_out(0x61, speaker_state & 0xFC);
     disable_cursor();
-    if (!is_gfx) {
+        if (!is_gfx) {
         char* vm = (char*)0xb8000;
         for (int i = 0; i < 80 * 25 * 2; i += 2) {
             vm[i] = ' '; vm[i + 1] = 0x1F;
         }
     } else {
-        screen_set_font_scale(3, 2);
+        font_set_current(font_get_8x8());
+        screen_set_font_scale_xy(3, 2, 2, 1);
+        screen_set_line_gap(3);
         cols = screen_get_cols();
         rows = screen_get_rows();
         uint32_t blue = 0x000000AA;

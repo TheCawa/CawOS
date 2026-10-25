@@ -1,5 +1,8 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/hash.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 
 static float last_result = 0.0f;

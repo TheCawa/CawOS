@@ -1,7 +1,10 @@
 #include "commands.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "kernel/idt.h"
+#include <stddef.h>
 
 #ifndef NULL
 #define NULL ((void*)0)

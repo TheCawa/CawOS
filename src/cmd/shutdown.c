@@ -1,7 +1,7 @@
 #include "commands.h"
 #include "acpi.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/string.h"
 #include "drivers/io.h"
 #include "kernel/config.h"
 

@@ -1,6 +1,7 @@
 #include "commands.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "drivers/rtc.h"
 
 void cmd_date(char* args, int* row) {

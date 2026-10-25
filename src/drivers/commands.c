@@ -1,7 +1,9 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/interrupt_state.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 #include "kernel/interrupt.h"
+#include <stddef.h>
 #ifndef NULL
 #define NULL ((void*)0)
 #endif

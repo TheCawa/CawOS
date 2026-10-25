@@ -1,6 +1,7 @@
 #include "gui/bmp.h"
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 #include "kernel/memory.h"
 
 static uint32_t rd32(const uint8_t* p) {

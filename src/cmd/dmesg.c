@@ -1,7 +1,7 @@
 #include "commands.h"
 #include "libc/logger.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/number.h"
 
 void cmd_dmesg(char* args, int* row) {
     int count = logger_get_entry_count();

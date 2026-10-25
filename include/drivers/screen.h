@@ -23,6 +23,9 @@ typedef enum {
 
 void screen_init_graphics(uint32_t framebuffer, uint32_t width, uint32_t height, uint32_t pitch);
 void screen_set_font_scale(uint32_t num, uint32_t den);
+void screen_set_font_scale_xy(uint32_t num_x, uint32_t den_x,
+                              uint32_t num_y, uint32_t den_y);
+void screen_set_line_gap(uint32_t gap);     
 void screen_pop_font(void);
 void screen_push_font(font_t* f, uint32_t gap);
 void set_video_mode(video_mode_t mode);
@@ -35,7 +38,7 @@ void screen_flip_rect(int x, int y, int w, int h);
 void gfx_draw_char_ex(char c, int x, int y, uint32_t fg, uint32_t bg,
                       const font_t* f, uint32_t num, uint32_t den);
 void gfx_draw_char_px(char c, int px, int py, uint32_t fg, uint32_t bg,
-                      const font_t* f, uint32_t scale);
+                      const font_t* f, uint32_t scale);     
 void print_at_color(const char* message, int row, int col, unsigned char color);
 void print_at(char* message, int row, int col);
 void print_char_at(char c, int row, int col, unsigned char color);

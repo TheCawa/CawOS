@@ -2,7 +2,8 @@
 #include "kernel/process.h"
 #include "kernel/scheduler.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/number.h"
+#include "libc/string.h"
 
 void cmd_kill(char* args, int* row) {
     if (!args || args[0] == '\0') {

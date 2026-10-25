@@ -1,5 +1,7 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/format.h"
+#include "libc/interrupt_state.h"
+#include "libc/timer.h"
 #include "drivers/screen.h"
 #include "libc/keyboard.h"
 #include "kernel/interrupt.h"

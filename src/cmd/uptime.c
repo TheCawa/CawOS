@@ -1,6 +1,9 @@
 #include "commands.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
+#include <stddef.h>
 
 extern volatile uint32_t system_ticks;
 

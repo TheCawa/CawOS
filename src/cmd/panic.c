@@ -1,5 +1,5 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/timer.h"
 #include "drivers/screen.h"
 
 void cmd_panic(char* args, int* row) {

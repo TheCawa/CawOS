@@ -1,5 +1,7 @@
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 #include "drivers/io.h"
 #include "kernel/idt.h"
@@ -59,6 +61,20 @@ static void free_cluster_chain(uint16_t start_cluster) {
         cawfat[current] = CLUSTER_EMPTY;
         current = next;
     }
+}
+
+static int is_valid_filename(const char* name) {
+    if (name == NULL || name[0] == '\0') return 0;
+    if (strlen(name) >= 32) return 0;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 0;
+
+    for (int i = 0; name[i] != '\0'; i++) {
+        char c = name[i];
+        if (c == '/') return 0;
+        if ((unsigned char)c < 0x20) return 0;
+    }
+
+    return 1;
 }
 
 void fs_flush() {
@@ -168,6 +184,10 @@ void fs_list(int* row) {
 }
 
 int fs_create(char* name, int* row) {
+    if (!is_valid_filename(name)) {
+        print_line_scroll("Error: Invalid file name!", 0, row, 0x0C);
+        return 0;
+    }
     if (strlen(name) >= 32) {
         print_line_scroll("Error: Name too long!", 0, row, 0x0C);
         return 0;
@@ -191,6 +211,10 @@ int fs_create(char* name, int* row) {
 }
 
 int fs_mkdir(char* name, int* row) {
+    if (!is_valid_filename(name)) {
+        print_line_scroll("Error: Invalid directory name!", 0, row, 0x0C);
+        return 0;
+    }
     if (strlen(name) >= 32) {
         print_line_scroll("Error: Name too long!", 0, row, 0x0C);
         return 0;
@@ -348,44 +372,71 @@ int fs_cd_abs(const char* path) {
 }
 
 int fs_write(char* name, uint8_t* data, uint32_t len) {
-
+    if (len > 0 && data == NULL) return 0;
+    int idx = -1;
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists && !fs[i].is_dir &&
             strcmp(fs[i].name, name) == 0 &&
             strcmp(fs[i].dir, current_dir) == 0) {
-            free_cluster_chain(fs[i].first_cluster);
-            fs[i].first_cluster = CLUSTER_EOF;
-            if (len == 0) {
-                fs[i].size_bytes = 0;
-                fs_flush();
-                return 1;
-            }
-            uint32_t sectors_needed = (len + 511) / 512;
-            uint16_t prev_cluster = CLUSTER_EOF;
-            for (uint32_t s = 0; s < sectors_needed; s++) {
-                int free_idx = find_free_cluster();
-                if (free_idx == -1) break;
-                cawfat[free_idx] = CLUSTER_EOF;
-                if (s == 0) {
-                    fs[i].first_cluster = free_idx;
-                } else {
-                    cawfat[prev_cluster] = free_idx;
-                }
-                uint8_t buf[512];
-                memset(buf, 0, 512);
-                uint32_t offset = s * 512;
-                uint32_t to_copy = (len - offset > 512) ? 512 : (len - offset);
-                memcpy(buf, data + offset, to_copy);
-                fs_write_sector(DATA_REGION_START + free_idx, buf);
-                prev_cluster = free_idx;
-            }
-
-            fs[i].size_bytes = len;
-            fs_flush();
-            return 1;
+            idx = i;
+            break;
         }
     }
-    return 0;
+
+    if (idx < 0) return 0;
+
+    if (len == 0) {
+        uint16_t old_first = fs[idx].first_cluster;
+
+        fs[idx].first_cluster = CLUSTER_EOF;
+        fs[idx].size_bytes = 0;
+        fs_flush();
+
+        free_cluster_chain(old_first);
+        fs_flush();
+        return 1;
+    }
+
+    uint32_t sectors_needed = (len + 511) / 512;
+    uint16_t new_first = CLUSTER_EOF;
+    uint16_t prev_cluster = CLUSTER_EOF;
+
+    for (uint32_t s = 0; s < sectors_needed; s++) {
+        int free_idx = find_free_cluster();
+
+        if (free_idx == -1) {
+            free_cluster_chain(new_first);
+            return 0;
+        }
+
+        cawfat[free_idx] = CLUSTER_EOF;
+
+        if (s == 0) {
+            new_first = (uint16_t)free_idx;
+        } else {
+            cawfat[prev_cluster] = (uint16_t)free_idx;
+        }
+
+        uint8_t buf[512];
+        memset(buf, 0, 512);
+
+        uint32_t offset = s * 512;
+        uint32_t to_copy = (len - offset > 512) ? 512 : (len - offset);
+        memcpy(buf, data + offset, to_copy);
+
+        fs_write_sector(DATA_REGION_START + free_idx, buf);
+
+        prev_cluster = (uint16_t)free_idx;
+    }
+
+    uint16_t old_first = fs[idx].first_cluster;
+    fs[idx].first_cluster = new_first;
+    fs[idx].size_bytes = len;
+    fs_flush();
+    free_cluster_chain(old_first);
+    fs_flush();
+
+    return 1;
 }
 
 int fs_write_file(char* name, uint8_t* data, uint32_t size) {
@@ -460,7 +511,9 @@ void fs_format(uint32_t magic) {
             memcpy(&keep_buf[keep_count++], &fs[i], sizeof(file_t));
         }
         uint16_t curr = fs[i].first_cluster;
+        uint32_t steps = 0;
         while (curr != CLUSTER_EOF && curr < MAX_CLUSTERS) {
+            if (++steps > MAX_CLUSTERS) break;   /* петля в FAT */
             protected_map[curr] = 1;
             curr = cawfat[curr];
         }
@@ -481,22 +534,65 @@ void fs_format(uint32_t magic) {
 }
 
 int fs_rename(char* old_name, char* new_name) {
-    if (strlen(new_name) >= 32) return 0;
+    if (!is_valid_filename(new_name)) return 0;
     if (fs_exists(new_name)) return 0;
-
+    int idx = -1;
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists && strcmp(fs[i].name, old_name) == 0 &&
             strcmp(fs[i].dir, current_dir) == 0) {
-            if (fs_entry_is_in_core(&fs[i])) return 0;
-            strcpy(fs[i].name, new_name);
-            fs_flush();
-            return 1;
+            idx = i;
+            break;
         }
     }
-    return 0;
+    if (idx < 0) return 0;
+    if (fs_entry_is_in_core(&fs[idx])) return 0;
+    if (!fs[idx].is_dir) {
+        strcpy(fs[idx].name, new_name);
+        fs_flush();
+        return 1;
+    }
+    int base_len = (strcmp(current_dir, "/") == 0)
+        ? 1
+        : (int)strlen(current_dir) + 1;
+    int old_len = base_len + (int)strlen(old_name);
+    int new_len = base_len + (int)strlen(new_name);
+    if (old_len > 31 || new_len > 31) return 0;
+    char old_abs[32];
+    char new_abs[32];
+    fs_abs_path_of(current_dir, old_name, old_abs, sizeof(old_abs));
+    fs_abs_path_of(current_dir, new_name, new_abs, sizeof(new_abs));
+    for (int j = 0; j < MAX_FILES; j++) {
+        if (!fs[j].exists) continue;
+        int suffix_len;
+        if (strcmp(fs[j].dir, old_abs) == 0) {
+            suffix_len = 0;
+        } else if (strncmp(fs[j].dir, old_abs, old_len) == 0 &&
+                   fs[j].dir[old_len] == '/') {
+            suffix_len = (int)strlen(fs[j].dir) - old_len;
+        } else {
+            continue;
+        }
+        if (new_len + suffix_len > 31) return 0;
+    }
+    for (int j = 0; j < MAX_FILES; j++) {
+        if (!fs[j].exists) continue;
+        if (strcmp(fs[j].dir, old_abs) == 0) {
+            strcpy(fs[j].dir, new_abs);
+        } else if (strncmp(fs[j].dir, old_abs, old_len) == 0 &&
+                   fs[j].dir[old_len] == '/') {
+            char suffix[32];
+            strcpy(suffix, fs[j].dir + old_len);
+            strcpy(fs[j].dir, new_abs);
+            strcat(fs[j].dir, suffix);
+        }
+    }
+    strcpy(fs[idx].name, new_name);
+    fs_flush();
+    return 1;
 }
 
 int fs_load_to_memory(char* name, uint8_t* address) {
+    if (address == NULL) return 0;
     for (int i = 0; i < MAX_FILES; i++) {
         if (fs[i].exists && !fs[i].is_dir &&
             strcmp(fs[i].name, name) == 0 &&
@@ -504,10 +600,13 @@ int fs_load_to_memory(char* name, uint8_t* address) {
             uint16_t current_cluster = fs[i].first_cluster;
             uint32_t remaining = fs[i].size_bytes;
             uint32_t offset = 0;
+            uint32_t steps = 0;
             uint8_t tmp[512];
-            while (current_cluster != CLUSTER_EOF && 
-                   current_cluster < MAX_CLUSTERS && 
+            while (current_cluster != CLUSTER_EOF &&
+                   current_cluster != 0 &&
+                   current_cluster < MAX_CLUSTERS &&
                    remaining > 0) {
+                if (++steps > MAX_CLUSTERS) return 0;
                 uint32_t lba = DATA_REGION_START + current_cluster;
                 fs_read_sector(lba, tmp);
                 uint32_t to_copy = (remaining > 512) ? 512 : remaining;

@@ -1,6 +1,7 @@
 #include "gui/window.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 #include "gui/gui.h"
 #include "kernel/memory.h"
 #include "gui/desktop.h"

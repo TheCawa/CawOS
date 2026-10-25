@@ -1,60 +1,52 @@
 #include "commands.h"
-#include "libc/util.h"
 #include "drivers/screen.h"
+#include "libc/cpuid.h"
+#include "libc/format.h"
+#include "libc/string.h"
+#include "libc/timer.h"
 
-static void do_cpuid(uint32_t eax, uint32_t* out_eax, uint32_t* out_ebx,
-                     uint32_t* out_ecx, uint32_t* out_edx) {
-    __asm__ volatile("cpuid"
-        : "=a"(*out_eax), "=b"(*out_ebx), "=c"(*out_ecx), "=d"(*out_edx)
-        : "a"(eax)
-    );
+typedef struct {
+    unsigned int bit;
+    const char* name;
+} feat_t;
+
+static unsigned long long rdtsc64(void) {
+    unsigned int lo;
+    unsigned int hi;
+
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+
+    return ((unsigned long long)hi << 32) | (unsigned long long)lo;
 }
 
-static void cpuid_get_vendor(char* buf) {
-    uint32_t eax, ebx, ecx, edx;
-    do_cpuid(0, &eax, &ebx, &ecx, &edx);
-    buf[0] = ebx & 0xFF; buf[1] = (ebx >> 8) & 0xFF;
-    buf[2] = (ebx >> 16) & 0xFF; buf[3] = (ebx >> 24) & 0xFF;
-    buf[4] = edx & 0xFF; buf[5] = (edx >> 8) & 0xFF;
-    buf[6] = (edx >> 16) & 0xFF; buf[7] = (edx >> 24) & 0xFF;
-    buf[8] = ecx & 0xFF; buf[9] = (ecx >> 8) & 0xFF;
-    buf[10] = (ecx >> 16) & 0xFF; buf[11] = (ecx >> 24) & 0xFF;
-    buf[12] = '\0';
+static void trim_right(char* s) {
+    int len = strlen(s);
+
+    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) {
+        s[--len] = '\0';
+    }
 }
 
-static void cpuid_get_brand(char* buf) {
-    uint32_t regs[4];
-    uint32_t max_ext;
-    do_cpuid(0x80000000, &max_ext, &regs[1], &regs[2], &regs[3]);
-    
-    if (max_ext < 0x80000004) {
-        strcpy(buf, "Unknown");
-        return;
-    }
-    
-    int pos = 0;
-    for (uint32_t leaf = 0x80000002; leaf <= 0x80000004; leaf++) {
-        uint32_t eax, ebx, ecx, edx;
-        do_cpuid(leaf, &eax, &ebx, &ecx, &edx);
-        
-        uint32_t values[4] = {eax, ebx, ecx, edx};
-        for (int i = 0; i < 4; i++) {
-            buf[pos++] = values[i] & 0xFF;
-            buf[pos++] = (values[i] >> 8) & 0xFF;
-            buf[pos++] = (values[i] >> 16) & 0xFF;
-            buf[pos++] = (values[i] >> 24) & 0xFF;
-        }
-    }
-    buf[48] = '\0';
+static int append_feature(char* line, int size, const char* name, int count) {
+    int len = strnlen(line, size);
+    int name_len = strlen(name);
 
-    int start = 0;
-    while (buf[start] == ' ' && buf[start] != '\0') start++;
-    if (start > 0) {
-        for (int i = 0; buf[start + i] != '\0'; i++) {
-            buf[i] = buf[start + i];
+    if (count > 0) {
+        if (len + 1 + name_len >= size) {
+            return count;
         }
-        buf[pos - start] = '\0';
+
+        line[len] = ' ';
+        line[len + 1] = '\0';
+        len++;
+    } else {
+        if (len + name_len >= size) {
+            return count;
+        }
     }
+
+    strcat(line, name);
+    return count + 1;
 }
 
 static void cpuid_help(int* row) {
@@ -76,220 +68,239 @@ static void cpuid_help(int* row) {
 
 static void cpuid_show_brand(int* row) {
     char brand[49];
-    cpuid_get_brand(brand);
     char line[64];
-    memset(line, 0, 64);
-    strcpy(line, "Brand: ");
-    strcat(line, brand);
+
+    cpuid_get_brand(brand);
+
+    snprintf(line, sizeof(line), "Brand: %s", brand);
     print_line_scroll(line, 0, row, 0x0F);
 }
 
 static void cpuid_show_vendor(int* row) {
     char vendor[13];
-    cpuid_get_vendor(vendor);
     char line[32];
-    memset(line, 0, 32);
-    strcpy(line, "Vendor: ");
-    strcat(line, vendor);
+
+    cpuid_get_vendor(vendor);
+
+    snprintf(line, sizeof(line), "Vendor: %s", vendor);
     print_line_scroll(line, 0, row, 0x0F);
 }
 
 static void cpuid_show_family(int* row) {
-    uint32_t eax, ebx, ecx, edx;
-    do_cpuid(1, &eax, &ebx, &ecx, &edx);
-    
-    uint32_t stepping = eax & 0xF;
-    uint32_t base_model = (eax >> 4) & 0xF;
-    uint32_t base_family = (eax >> 8) & 0xF;
-    uint32_t ext_model = (eax >> 16) & 0xF;
-    uint32_t ext_family = (eax >> 20) & 0xFF;
-    
-    uint32_t family = base_family;
-    if (base_family == 0xF) {
+    if (cpuid_max_basic() < 1) {
+        print_line_scroll("Family info not available", 0, row, 0x0C);
+        return;
+    }
+
+    unsigned int eax;
+    unsigned int ebx;
+    unsigned int ecx;
+    unsigned int edx;
+
+    cpuid_raw(1, 0, &eax, &ebx, &ecx, &edx);
+
+    unsigned int stepping = eax & 0xFu;
+    unsigned int base_model = (eax >> 4) & 0xFu;
+    unsigned int base_family = (eax >> 8) & 0xFu;
+    unsigned int ext_model = (eax >> 16) & 0xFu;
+    unsigned int ext_family = (eax >> 20) & 0xFFu;
+    unsigned int family = base_family;
+
+    if (base_family == 0xFu) {
         family = base_family + ext_family;
     }
-    
-    uint32_t model = base_model;
-    if (base_family == 0x6 || base_family == 0xF) {
+
+    unsigned int model = base_model;
+
+    if (base_family == 0x6u || base_family == 0xFu) {
         model = (ext_model << 4) | base_model;
     }
-    
-    char buf[16];
+
     char line[64];
-    
-    memset(line, 0, 64);
-    strcpy(line, "Family: ");
-    itoa(family, buf);
-    strcat(line, buf);
+
+    snprintf(line, sizeof(line), "Family: %u", family);
     print_line_scroll(line, 0, row, 0x0F);
-    
-    memset(line, 0, 64);
-    strcpy(line, "Model: ");
-    itoa(model, buf);
-    strcat(line, buf);
+
+    snprintf(line, sizeof(line), "Model: %u", model);
     print_line_scroll(line, 0, row, 0x0F);
-    
-    memset(line, 0, 64);
-    strcpy(line, "Stepping: ");
-    itoa(stepping, buf);
-    strcat(line, buf);
+
+    snprintf(line, sizeof(line), "Stepping: %u", stepping);
     print_line_scroll(line, 0, row, 0x0F);
 }
 
 static void cpuid_show_features(int* row) {
-    uint32_t eax, ebx, ecx, edx;
-    do_cpuid(1, &eax, &ebx, &ecx, &edx);
-    
+    if (cpuid_max_basic() < 1) {
+        print_line_scroll("Features not available", 0, row, 0x0C);
+        return;
+    }
+
+    unsigned int eax;
+    unsigned int ebx;
+    unsigned int ecx;
+    unsigned int edx;
+
+    cpuid_raw(1, 0, &eax, &ebx, &ecx, &edx);
+
     print_line_scroll("Features:", 0, row, 0x0E);
 
-    typedef struct { int bit; const char* name; } feat_t;
-    
-    feat_t edx_features[] = {
+    static const feat_t edx_features[] = {
         {0, "FPU"}, {4, "TSC"}, {5, "MSR"}, {6, "PAE"},
         {8, "CMPXCHG8B"}, {11, "SEP"}, {15, "CMOV"},
         {19, "CLFSH"}, {23, "MMX"}, {24, "FXSR"},
         {25, "SSE"}, {26, "SSE2"}, {28, "HT"}
     };
-    
-    feat_t ecx_features[] = {
+
+    static const feat_t ecx_features[] = {
         {0, "SSE3"}, {1, "PCLMULQDQ"}, {9, "SSSE3"},
         {12, "FMA"}, {19, "SSE4.1"}, {20, "SSE4.2"},
         {25, "AES"}, {26, "XSAVE"}, {28, "AVX"},
         {29, "F16C"}, {30, "RDRAND"}
     };
-    
+
     char line[80];
     int count;
 
-    memset(line, 0, 80);
-    strcpy(line, "  ");
+    safe_strcpy(line, "  ", sizeof(line));
     count = 0;
-    for (int i = 0; i < 13; i++) {
-        if (edx & (1 << edx_features[i].bit)) {
-            if (count > 0 && strlen(line) + strlen(edx_features[i].name) + 2 < 78) {
-                strcat(line, " ");
-            }
-            if (strlen(line) + strlen(edx_features[i].name) + 2 < 78) {
-                strcat(line, edx_features[i].name);
-                count++;
-            }
+
+    for (unsigned int i = 0; i < sizeof(edx_features) / sizeof(edx_features[0]); i++) {
+        if (edx & (1u << edx_features[i].bit)) {
+            count = append_feature(line, sizeof(line), edx_features[i].name, count);
         }
     }
-    if (count > 0) print_line_scroll(line, 0, row, 0x0A);
 
-    memset(line, 0, 80);
-    strcpy(line, "  ");
+    if (count > 0) {
+        print_line_scroll(line, 0, row, 0x0A);
+    }
+
+    safe_strcpy(line, "  ", sizeof(line));
     count = 0;
-    for (int i = 0; i < 11; i++) {
-        if (ecx & (1 << ecx_features[i].bit)) {
-            if (count > 0 && strlen(line) + strlen(ecx_features[i].name) + 2 < 78) {
-                strcat(line, " ");
-            }
-            if (strlen(line) + strlen(ecx_features[i].name) + 2 < 78) {
-                strcat(line, ecx_features[i].name);
-                count++;
-            }
+
+    for (unsigned int i = 0; i < sizeof(ecx_features) / sizeof(ecx_features[0]); i++) {
+        if (ecx & (1u << ecx_features[i].bit)) {
+            count = append_feature(line, sizeof(line), ecx_features[i].name, count);
         }
     }
-    if (count > 0) print_line_scroll(line, 0, row, 0x0A);
 
-    uint32_t max_ext;
-    do_cpuid(0x80000000, &max_ext, &ebx, &ecx, &edx);
-    if (max_ext >= 0x80000001) {
-        do_cpuid(0x80000001, &eax, &ebx, &ecx, &edx);
-        memset(line, 0, 80);
-        strcpy(line, "  ");
+    if (count > 0) {
+        print_line_scroll(line, 0, row, 0x0A);
+    }
+
+    unsigned int max_ext = cpuid_max_extended();
+
+    if (max_ext >= 0x80000001u) {
+        cpuid_raw(0x80000001u, 0, &eax, &ebx, &ecx, &edx);
+
+        safe_strcpy(line, "  ", sizeof(line));
         count = 0;
-        
-        if (edx & (1 << 29)) { strcat(line, "x86-64"); count++; }
-        if (edx & (1 << 27)) { if (count>0) strcat(line, " "); strcat(line, "RDTSCP"); count++; }
-        if (edx & (1 << 20)) { if (count>0) strcat(line, " "); strcat(line, "NX"); count++; }
-        if (ecx & (1 << 5))  { if (count>0) strcat(line, " "); strcat(line, "LZCNT"); count++; }
-        if (ecx & (1 << 8))  { if (count>0) strcat(line, " "); strcat(line, "3DNow!Pref"); count++; }
-        if (ecx & (1 << 31)) { if (count>0) strcat(line, " "); strcat(line, "3DNow!"); count++; }
-        
-        if (count > 0) print_line_scroll(line, 0, row, 0x0A);
+
+        if (edx & (1u << 29)) {
+            count = append_feature(line, sizeof(line), "x86-64", count);
+        }
+
+        if (edx & (1u << 27)) {
+            count = append_feature(line, sizeof(line), "RDTSCP", count);
+        }
+
+        if (edx & (1u << 20)) {
+            count = append_feature(line, sizeof(line), "NX", count);
+        }
+
+        if (ecx & (1u << 5)) {
+            count = append_feature(line, sizeof(line), "LZCNT", count);
+        }
+
+        if (ecx & (1u << 8)) {
+            count = append_feature(line, sizeof(line), "3DNow!Pref", count);
+        }
+
+        if (ecx & (1u << 31)) {
+            count = append_feature(line, sizeof(line), "3DNow!", count);
+        }
+
+        if (count > 0) {
+            print_line_scroll(line, 0, row, 0x0A);
+        }
     }
 }
 
 static void cpuid_show_cache(int* row) {
-    uint32_t eax, ebx, ecx, edx;
     print_line_scroll("Cache:", 0, row, 0x0E);
-    uint32_t max_leaf;
-    do_cpuid(0, &max_leaf, &ebx, &ecx, &edx);
-    
-    if (max_leaf >= 4) {
-        for (int i = 0; i < 16; i++) {
-            do_cpuid(4 | (i << 22), &eax, &ebx, &ecx, &edx);
-        }
+    unsigned int max_leaf = cpuid_max_basic();
+    if (max_leaf < 4) {
+        print_line_scroll("  Cache info not available", 0, row, 0x0F);
+        return;
     }
-    for (int i = 0; i < 10; i++) {
-        uint32_t sub_eax = 4;
-        __asm__ volatile("cpuid"
-            : "=a"(sub_eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-            : "a"(4), "c"(i)
-        );
-        
-        uint32_t cache_type = sub_eax & 0x1F;
-        if (cache_type == 0) break;
-        
-        uint32_t cache_level = (sub_eax >> 5) & 0x7;
-        uint32_t ways = ((ebx >> 22) & 0x3FF) + 1;
-        uint32_t partitions = ((ebx >> 12) & 0x3FF) + 1;
-        uint32_t line_size = (ebx & 0xFFF) + 1;
-        uint32_t sets = ecx + 1;
-        
-        uint32_t total_size = ways * partitions * line_size * sets;
-        uint32_t size_kb = total_size / 1024;
-        
-        const char* type_str;
-        switch (cache_type) {
-            case 1: type_str = "Data"; break;
-            case 2: type_str = "Instruction"; break;
-            case 3: type_str = "Unified"; break;
-            default: type_str = "Unknown"; break;
+    int found = 0;
+    for (unsigned int i = 0; i < 10; i++) {
+
+        unsigned int eax;
+        unsigned int ebx;
+        unsigned int ecx;
+        unsigned int edx;
+
+        cpuid_raw(4, i, &eax, &ebx, &ecx, &edx);
+        unsigned int cache_type = eax & 0x1Fu;
+        if (cache_type == 0) {
+            break;
         }
-        
+        found = 1;
+
+        unsigned int cache_level = (eax >> 5) & 0x7u;
+        unsigned int ways = ((ebx >> 22) & 0x3FFu) + 1;
+        unsigned int partitions = ((ebx >> 12) & 0x3FFu) + 1;
+        unsigned int line_size = (ebx & 0xFFFu) + 1;
+        unsigned int sets = ecx + 1;
+        unsigned long long total_size =
+            (unsigned long long)ways *
+            (unsigned long long)partitions *
+            (unsigned long long)line_size *
+            (unsigned long long)sets;
+        unsigned int size_kb = (unsigned int)(total_size / 1024ULL);
+        const char* type_str;
+
+        switch (cache_type) {
+            case 1:
+                type_str = "Data";
+                break;
+
+            case 2:
+                type_str = "Instruction";
+                break;
+
+            case 3:
+                type_str = "Unified";
+                break;
+
+            default:
+                type_str = "Unknown";
+                break;
+        }
         char line[64];
-        char buf[16];
-        memset(line, 0, 64);
-        strcpy(line, "  L");
-        itoa(cache_level, buf);
-        strcat(line, buf);
-        strcat(line, " ");
-        strcat(line, type_str);
-        strcat(line, " Cache: ");
-        itoa(size_kb, buf);
-        strcat(line, buf);
-        strcat(line, " KB");
+        snprintf(
+            line,
+            sizeof(line),
+            "  L%u %s Cache: %u KB",
+            cache_level,
+            type_str,
+            size_kb
+        );
         print_line_scroll(line, 0, row, 0x0F);
     }
+    if (!found) {
+        print_line_scroll("  No cache entries found", 0, row, 0x0F);
+    }
 }
-
 static void cpuid_show_hypervisor(int* row) {
-    uint32_t eax, ebx, ecx, edx;
-    do_cpuid(1, &eax, &ebx, &ecx, &edx);
-    
-    if (!(ecx & (1 << 31))) {
+    if (!cpuid_is_hypervisor()) {
         print_line_scroll("Hypervisor: None (bare metal)", 0, row, 0x0F);
         return;
     }
-    
     print_line_scroll("Hypervisor: Detected", 0, row, 0x0E);
-    
-    do_cpuid(0x40000000, &eax, &ebx, &ecx, &edx);
-    
+
     char sig[13];
-    sig[0] = ebx & 0xFF; sig[1] = (ebx >> 8) & 0xFF;
-    sig[2] = (ebx >> 16) & 0xFF; sig[3] = (ebx >> 24) & 0xFF;
-    sig[4] = ecx & 0xFF; sig[5] = (ecx >> 8) & 0xFF;
-    sig[6] = (ecx >> 16) & 0xFF; sig[7] = (ecx >> 24) & 0xFF;
-    sig[8] = edx & 0xFF; sig[9] = (edx >> 8) & 0xFF;
-    sig[10] = (edx >> 16) & 0xFF; sig[11] = (edx >> 24) & 0xFF;
-    sig[12] = '\0';
-    
+    cpuid_hypervisor_signature(sig);
     const char* hv_name = "Unknown";
-    
     if (strncasecmp(sig, "KVMKVMKVM", 9) == 0) {
         hv_name = "KVM";
     } else if (strncasecmp(sig, "Microsoft Hv", 12) == 0) {
@@ -305,171 +316,176 @@ static void cpuid_show_hypervisor(int* row) {
     } else if (strncasecmp(sig, "QEMU", 4) == 0) {
         hv_name = "QEMU";
     }
-    
+
     char line[64];
-    memset(line, 0, 64);
-    strcpy(line, "Type: ");
-    strcat(line, hv_name);
+    snprintf(line, sizeof(line), "Type: %s", hv_name);
     print_line_scroll(line, 0, row, 0x0F);
 
-    char buf[16];
-    memset(line, 0, 64);
-    strcpy(line, "Max hypervisor leaf: 0x");
-    itoa_hex(eax, buf);
-    strcat(line, buf);
+    unsigned int eax;
+    unsigned int ebx;
+    unsigned int ecx;
+    unsigned int edx;
+    cpuid_raw(0x40000000u, 0, &eax, &ebx, &ecx, &edx);
+    snprintf(line, sizeof(line), "Max hypervisor leaf: 0x%x", eax);
     print_line_scroll(line, 0, row, 0x0F);
 }
 
+static int parse_leaf(const char* s, unsigned int* out) {
+    if (s == 0 || *s == '\0') {
+        return 0;
+    }
+    while (*s == ' ' || *s == '\t') {
+        s++;
+    }
+    if (*s == '\0') {
+        return 0;
+    }
+    int base = 10;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        base = 16;
+        s += 2;
+    }
+    unsigned int value = 0;
+    int has_digit = 0;
+    while (*s) {
+        unsigned int digit;
+        if (*s >= '0' && *s <= '9') {
+            digit = *s - '0';
+        } else if (base == 16 && *s >= 'a' && *s <= 'f') {
+            digit = *s - 'a' + 10;
+        } else if (base == 16 && *s >= 'A' && *s <= 'F') {
+            digit = *s - 'A' + 10;
+        } else if (*s == ' ' || *s == '\t') {
+            s++;
+
+            while (*s == ' ' || *s == '\t') {
+                s++;
+            }
+
+            if (*s != '\0') {
+                return 0;
+            }
+
+            break;
+        } else {
+            return 0;
+        }
+        has_digit = 1;
+        if (value > (0xFFFFFFFFu - digit) / (unsigned int)base) {
+            return 0;
+        }
+        value = value * (unsigned int)base + digit;
+        s++;
+    }
+    if (!has_digit) {
+        return 0;
+    }
+    *out = value;
+    return 1;
+}
+
 static void cpuid_show_raw(const char* arg, int* row) {
-    if (arg == NULL || arg[0] == '\0') {
+    unsigned int leaf;
+    if (!parse_leaf(arg, &leaf)) {
         print_line_scroll("Usage: cpuid --raw <leaf>", 0, row, 0x0C);
         print_line_scroll("Example: cpuid --raw 1", 0, row, 0x0E);
+        print_line_scroll("Example: cpuid --raw 0x80000000", 0, row, 0x0E);
         return;
     }
 
-    uint32_t leaf = 0;
-    int is_hex = 0;
-    
-    if (arg[0] == '0' && (arg[1] == 'x' || arg[1] == 'X')) {
-        is_hex = 1;
-        arg += 2;
-    }
-    
-    while (*arg) {
-        leaf *= is_hex ? 16 : 10;
-        if (*arg >= '0' && *arg <= '9') {
-            leaf += *arg - '0';
-        } else if (is_hex && *arg >= 'a' && *arg <= 'f') {
-            leaf += *arg - 'a' + 10;
-        } else if (is_hex && *arg >= 'A' && *arg <= 'F') {
-            leaf += *arg - 'A' + 10;
-        } else {
-            print_line_scroll("Invalid leaf number", 0, row, 0x0C);
-            return;
-        }
-        arg++;
-    }
-    
-    uint32_t eax, ebx, ecx, edx;
-    do_cpuid(leaf, &eax, &ebx, &ecx, &edx);
-    
+    unsigned int eax;
+    unsigned int ebx;
+    unsigned int ecx;
+    unsigned int edx;
+    cpuid_raw(leaf, 0, &eax, &ebx, &ecx, &edx);
     char line[64];
-    char buf[16];
-    
-    memset(line, 0, 64);
-    strcpy(line, "CPUID Leaf 0x");
-    itoa_hex(leaf, buf);
-    strcat(line, buf);
-    strcat(line, ":");
+    snprintf(line, sizeof(line), "CPUID Leaf 0x%x:", leaf);
     print_line_scroll(line, 0, row, 0x0E);
-    
-    memset(line, 0, 64);
-    strcpy(line, "  EAX: 0x");
-    itoa_hex(eax, buf);
-    strcat(line, buf);
+    snprintf(line, sizeof(line), "  EAX: 0x%x", eax);
     print_line_scroll(line, 0, row, 0x0F);
-    
-    memset(line, 0, 64);
-    strcpy(line, "  EBX: 0x");
-    itoa_hex(ebx, buf);
-    strcat(line, buf);
+    snprintf(line, sizeof(line), "  EBX: 0x%x", ebx);
     print_line_scroll(line, 0, row, 0x0F);
-    
-    memset(line, 0, 64);
-    strcpy(line, "  ECX: 0x");
-    itoa_hex(ecx, buf);
-    strcat(line, buf);
+    snprintf(line, sizeof(line), "  ECX: 0x%x", ecx);
     print_line_scroll(line, 0, row, 0x0F);
-    
-    memset(line, 0, 64);
-    strcpy(line, "  EDX: 0x");
-    itoa_hex(edx, buf);
-    strcat(line, buf);
+    snprintf(line, sizeof(line), "  EDX: 0x%x", edx);
     print_line_scroll(line, 0, row, 0x0F);
 }
 
 static void cpuid_show_topology(int* row) {
-    uint32_t eax, ebx, ecx, edx;
-    
     print_line_scroll("CPU Topology:", 0, row, 0x0E);
-    uint32_t max_leaf;
-    do_cpuid(0, &max_leaf, &ebx, &ecx, &edx);
-    
-    if (max_leaf >= 0xB) {
-        uint32_t threads_per_core = 0;
-        uint32_t cores = 0;
-        
-        do_cpuid(0xB, &eax, &ebx, &ecx, &edx);
-        
-        if (ebx != 0) {
-            threads_per_core = ebx & 0xFFFF;
-
-            do_cpuid(0xB | (1 << 8), &eax, &ebx, &ecx, &edx);
-            uint32_t total_threads = ebx & 0xFFFF;
-            cores = total_threads / threads_per_core;
-            
-            char line[64];
-            char buf[16];
-            
-            memset(line, 0, 64);
-            strcpy(line, "  Cores: ");
-            itoa(cores, buf);
-            strcat(line, buf);
+    unsigned int max_leaf = cpuid_max_basic();
+    char line[64];
+    if (max_leaf >= 0xBu) {
+        unsigned int eax;
+        unsigned int ebx;
+        unsigned int ecx;
+        unsigned int edx;
+        cpuid_raw(0xBu, 0, &eax, &ebx, &ecx, &edx);
+        unsigned int threads_per_core = ebx & 0xFFFFu;
+        unsigned int eax1;
+        unsigned int ebx1;
+        unsigned int ecx1;
+        unsigned int edx1;
+        cpuid_raw(0xBu, 1, &eax1, &ebx1, &ecx1, &edx1);
+        unsigned int total_threads = ebx1 & 0xFFFFu;
+        if (threads_per_core != 0 && total_threads != 0) {
+            unsigned int cores = total_threads / threads_per_core;
+            snprintf(line, sizeof(line), "  Cores: %u", cores);
             print_line_scroll(line, 0, row, 0x0F);
-            
-            memset(line, 0, 64);
-            strcpy(line, "  Threads per core: ");
-            itoa(threads_per_core, buf);
-            strcat(line, buf);
+            snprintf(line, sizeof(line), "  Threads per core: %u", threads_per_core);
             print_line_scroll(line, 0, row, 0x0F);
-            
-            memset(line, 0, 64);
-            strcpy(line, "  Total threads: ");
-            itoa(total_threads, buf);
-            strcat(line, buf);
+            snprintf(line, sizeof(line), "  Total threads: %u", total_threads);
             print_line_scroll(line, 0, row, 0x0F);
-        } else {
-            print_line_scroll("  Topology info not available", 0, row, 0x0F);
+            return;
         }
-    } else {
-        do_cpuid(1, &eax, &ebx, &ecx, &edx);
-        uint32_t logical_cpus = (ebx >> 16) & 0xFF;
-        
-        char line[64];
-        char buf[16];
-        memset(line, 0, 64);
-        strcpy(line, "  Logical processors: ");
-        itoa(logical_cpus, buf);
-        strcat(line, buf);
+
+        print_line_scroll("  Topology info not available", 0, row, 0x0F);
+        return;
+    }
+    if (max_leaf >= 1) {
+        unsigned int eax;
+        unsigned int ebx;
+        unsigned int ecx;
+        unsigned int edx;
+        cpuid_raw(1, 0, &eax, &ebx, &ecx, &edx);
+        unsigned int logical_cpus = (ebx >> 16) & 0xFFu;
+        snprintf(line, sizeof(line), "  Logical processors: %u", logical_cpus);
         print_line_scroll(line, 0, row, 0x0F);
         print_line_scroll("  (Extended topology not supported)", 0, row, 0x07);
+        return;
     }
+    print_line_scroll("  Topology info not available", 0, row, 0x0F);
 }
 
 static void cpuid_show_speed(int* row) {
     print_line_scroll("Measuring CPU speed...", 0, row, 0x0E);
-    uint32_t tsc_lo1, tsc_hi1, tsc_lo2, tsc_hi2;
-    __asm__ volatile("rdtsc" : "=a"(tsc_lo1), "=d"(tsc_hi1));
+    if (cpuid_max_basic() < 1) {
+        print_line_scroll("TSC not available", 0, row, 0x0C);
+        return;
+    }
+    unsigned int eax;
+    unsigned int ebx;
+    unsigned int ecx;
+    unsigned int edx;
+    cpuid_raw(1, 0, &eax, &ebx, &ecx, &edx);
+    if (!(edx & (1u << 4))) {
+        print_line_scroll("TSC not available", 0, row, 0x0C);
+        return;
+    }
+    unsigned long long t1 = rdtsc64();
     sleep_ms(50);
-    __asm__ volatile("rdtsc" : "=a"(tsc_lo2), "=d"(tsc_hi2));
-    uint32_t elapsed = tsc_lo2 - tsc_lo1;
-    if (tsc_hi2 != tsc_hi1) {
+    unsigned long long t2 = rdtsc64();
+    unsigned long long elapsed64 = t2 - t1;
+    if (elapsed64 > 0xFFFFFFFFULL) {
         print_line_scroll("CPU too fast to measure!", 0, row, 0x0C);
         return;
     }
-    uint32_t freq_mhz = elapsed / 50000;
+    unsigned int elapsed = (unsigned int)elapsed64;
+    unsigned int freq_mhz = elapsed / 50000u;
     char line[64];
-    char buf[16];
-    memset(line, 0, 64);
-    strcpy(line, "CPU Speed: ~");
-    itoa(freq_mhz, buf);
-    strcat(line, buf);
-    strcat(line, " MHz");
+    snprintf(line, sizeof(line), "CPU Speed: ~%u MHz", freq_mhz);
     print_line_scroll(line, 0, row, 0x0F);
-    memset(line, 0, 64);
-    strcpy(line, "Cycles in 50ms: ");
-    itoa(elapsed, buf);
-    strcat(line, buf);
+    snprintf(line, sizeof(line), "Cycles in 50ms: %u", elapsed);
     print_line_scroll(line, 0, row, 0x07);
 }
 
@@ -494,40 +510,49 @@ static void cpuid_show_full(int* row) {
 }
 
 void cmd_cpuid(char* args, int* row) {
-    if (args == NULL || args[0] == '\0') {
+    char argbuf[128];
+    safe_strcpy(argbuf, args ? args : "", sizeof(argbuf));
+    char* p = argbuf;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    trim_right(p);
+    if (*p == '\0') {
         cpuid_show_full(row);
         return;
     }
-    
-    while (*args == ' ') args++;
-    
-    if (strcasecmp(args, "--help") == 0 || strcasecmp(args, "-h") == 0) {
+    if (strcasecmp(p, "--help") == 0 || strcasecmp(p, "-h") == 0) {
         cpuid_help(row);
-    } else if (strcasecmp(args, "--brand") == 0) {
+    } else if (strcasecmp(p, "--brand") == 0) {
         cpuid_show_brand(row);
-    } else if (strcasecmp(args, "--vendor") == 0) {
+    } else if (strcasecmp(p, "--vendor") == 0) {
         cpuid_show_vendor(row);
-    } else if (strcasecmp(args, "--family") == 0) {
+    } else if (strcasecmp(p, "--family") == 0) {
         cpuid_show_family(row);
-    } else if (strcasecmp(args, "--features") == 0) {
+    } else if (strcasecmp(p, "--features") == 0) {
         cpuid_show_features(row);
-    } else if (strcasecmp(args, "--cache") == 0) {
+    } else if (strcasecmp(p, "--cache") == 0) {
         cpuid_show_cache(row);
-    } else if (strcasecmp(args, "--hypervisor") == 0) {
+    } else if (strcasecmp(p, "--hypervisor") == 0) {
         cpuid_show_hypervisor(row);
-    } else if (strcasecmp(args, "--topology") == 0) {
+    } else if (strcasecmp(p, "--topology") == 0) {
         cpuid_show_topology(row);
-    } else if (strcasecmp(args, "--speed") == 0) {
+    } else if (strcasecmp(p, "--speed") == 0) {
         cpuid_show_speed(row);
-    } else if (strncasecmp(args, "--raw", 5) == 0) {
-        char* leaf_arg = args + 5;
-        while (*leaf_arg == ' ') leaf_arg++;
+    } else if (
+        strncasecmp(p, "--raw", 5) == 0 &&
+        (p[5] == '\0' || p[5] == ' ' || p[5] == '\t')
+    ) {
+        char* leaf_arg = p + 5;
+
+        while (*leaf_arg == ' ' || *leaf_arg == '\t') {
+            leaf_arg++;
+        }
+
         cpuid_show_raw(leaf_arg, row);
     } else {
-        char line[64];
-        memset(line, 0, 64);
-        strcpy(line, "Unknown option: ");
-        strcat(line, args);
+        char line[96];
+        snprintf(line, sizeof(line), "Unknown option: %s", p);
         print_line_scroll(line, 0, row, 0x0C);
         print_line_scroll("Use 'cpuid --help' for available options", 0, row, 0x0E);
     }

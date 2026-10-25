@@ -1,7 +1,7 @@
 #include "commands.h"
 #include "fs.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/string.h"
 
 void cmd_format(char* args, int* row) {
     if (args == 0 || strcmp(args, "confirm") != 0) {

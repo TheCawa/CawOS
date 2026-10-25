@@ -2,7 +2,8 @@
 #include "kernel/gdt.h"
 #include "kernel/memory.h"
 #include "drivers/serial.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 
 #define IDLE_PID 0
 

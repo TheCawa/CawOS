@@ -1,7 +1,7 @@
 #include "drivers/ac97.h"
 #include "drivers/pci.h"
 #include "drivers/io.h"
-#include "libc/util.h"
+#include "libc/memory.h"
 #include "kernel/memory.h"
 #include <stdint.h>
 

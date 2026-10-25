@@ -1,7 +1,11 @@
 #include "commands.h"
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/format.h"
+#include "libc/memory.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
+#include <stddef.h>
 
 extern file_t fs[MAX_FILES];
 

@@ -1,5 +1,6 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 
 extern void beep(int duration, int frequency); 

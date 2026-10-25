@@ -1,6 +1,5 @@
 #include "commands.h"
 #include "fs.h"
-#include "libc/util.h"
 #include "drivers/screen.h"
 
 void cmd_touch(char* args, int* row) {

@@ -1,7 +1,8 @@
 #include "commands.h"
 #include "kernel/process.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/number.h"
+#include "libc/string.h"
 
 static const char* state_name(uint32_t state) {
     switch (state) {

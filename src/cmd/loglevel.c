@@ -1,7 +1,9 @@
 #include "commands.h"
 #include "libc/logger.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/format.h"
+#include "libc/string.h"
+#include <stddef.h>
 
 void cmd_loglevel(char* args, int* row) {
     if (args == NULL || args[0] == '\0') {

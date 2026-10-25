@@ -1,8 +1,13 @@
 #include "commands.h"
-#include "libc/util.h"
+#include "libc/format.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 
 void cmd_font(char* args, int* row) {
+    if (!g_is_graphics) {
+        print_line_scroll("Error: Graphics mode not available", 0, row, 0x0C);
+        return;
+    }
     if (args == 0 || args[0] == '\0') {
         const font_t* f = font_get_current();
         char msg[128];

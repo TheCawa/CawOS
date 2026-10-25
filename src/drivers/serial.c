@@ -1,6 +1,6 @@
 #include "drivers/serial.h"
 #include "drivers/io.h"
-#include "libc/util.h"
+#include "libc/format.h"
 #include <stdarg.h>
 
 int g_serial_mirror_enabled = 0;

@@ -1,7 +1,9 @@
 #include "libc/logger.h"
 #include "drivers/screen.h"
 #include "drivers/serial.h"
-#include "libc/util.h"
+#include "libc/format.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 #include <stdarg.h>
 #include <stddef.h>
 

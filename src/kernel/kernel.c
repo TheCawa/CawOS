@@ -1,6 +1,9 @@
 #include "libc/keyboard_map.h"
 #include "drivers/io.h"
-#include "libc/util.h"
+#include "libc/format.h"
+#include "libc/memory.h"
+#include "libc/random.h"
+#include "libc/string.h"
 #include "drivers/screen.h"
 #include "drivers/serial.h"
 #include "fs.h"
@@ -281,7 +284,7 @@ void main() {
     clear_screen();
     heap_init();
     logger_init();
-    LOG_INFO("SYS", "CawOS v0.3.5 Bootstrap started");
+    LOG_INFO("SYS", "CawOS v0.3.6 Bootstrap started");
     LOG_INFO("MEM", "Heap initialized");
     uint32_t vbe_fb     = *((volatile uint32_t*)0x0520);
     uint32_t vbe_pitch  = *((volatile uint32_t*)0x0524);
@@ -385,7 +388,7 @@ void main() {
     // if (!shutdown_clean) {
     //     print_line_scroll("WARNING: System was not shut down properly.", 0, &row, 0x0C);
     // }
-    print_line_scroll("CawOS v0.3.5", 0, &row, 0x0B);
+    print_line_scroll("CawOS v0.3.6", 0, &row, 0x0B);
     print_line_scroll("Type 'help' to see all commands.", 0, &row, 0x0F);
     row++; 
     enable_cursor(13, 15);

@@ -1,6 +1,5 @@
 #include "commands.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
 
 void cmd_echo(char* args, int* row) {
     if (args == 0 || args[0] == '\0') {

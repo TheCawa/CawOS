@@ -1,6 +1,5 @@
 #include "gui/window.h"
 #include "gui/programs.h"
-#include "libc/util.h"
 
 extern program_t __start_prog;
 extern program_t __stop_prog;

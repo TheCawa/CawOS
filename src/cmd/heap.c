@@ -1,6 +1,7 @@
 #include "commands.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/number.h"
+#include "libc/string.h"
 #include "kernel/memory.h"
 
 void cmd_heap(char* args, int* row) {

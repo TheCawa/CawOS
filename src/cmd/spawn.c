@@ -3,7 +3,8 @@
 #include "kernel/scheduler.h"
 #include "kernel/memory.h"
 #include "drivers/screen.h"
-#include "libc/util.h"
+#include "libc/number.h"
+#include "libc/string.h"
 
 void cmd_spawn(char* args, int* row) {
     if (!args || args[0] == '\0') {

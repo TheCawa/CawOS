@@ -1,6 +1,7 @@
 #include "libc/font.h"
 #include "fs.h"
-#include "libc/util.h"
+#include "libc/memory.h"
+#include "libc/string.h"
 #include "kernel/memory.h"
 
 static font_t font_loaded = { 0, 0, 0, NULL, NULL };
